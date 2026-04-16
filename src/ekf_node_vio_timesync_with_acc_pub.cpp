@@ -237,42 +237,23 @@ void re_propagate()
         MatrixXd Ft;
         MatrixXd Vt;
 
-        // q_last = sys_seq[i].first.segment<3>(3);   // last X2
-        //! changed by wz
-        // q_last = sys_seq[i].first.segment<4>(3); // last X2
         q_last.w() = sys_seq[i].first(3);
         q_last.x() = sys_seq[i].first(4);
         q_last.y() = sys_seq[i].first(5);
         q_last.z() = sys_seq[i].first(6);
 
-        // bg_last = sys_seq[i].first.segment<3>(9);  // last X4
-        // ba_last = sys_seq[i].first.segment<3>(12); // last X5
         //! changed by wz
         bg_last = sys_seq[i].first.segment<3>(10); // last X4
         ba_last = sys_seq[i].first.segment<3>(13); // last X5
 
-        // Ft = MatrixXd::Identity(stateSize, stateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
         //! changed by wz
         Ft = MatrixXd::Identity(errorstateSize, errorstateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
 
         Vt = dt * diff_f_diff_n(q_last);
 
-        // X_state += dt * F_model(u_gyro, u_acc);
         //! changed by wz
         X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
 
-        // if (X_state(3) > PI)
-        //     X_state(3) -= 2 * PI;
-        // if (X_state(3) < -PI)
-        //     X_state(3) += 2 * PI;
-        // if (X_state(4) > PI)
-        //     X_state(4) -= 2 * PI;
-        // if (X_state(4) < -PI)
-        //     X_state(4) += 2 * PI;
-        // if (X_state(5) > PI)
-        //     X_state(5) -= 2 * PI;
-        // if (X_state(5) < -PI)
-        //     X_state(5) += 2 * PI;  //! changed by wz
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
 
 #if RePub
@@ -352,9 +333,6 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             u_acc(1) = new_msg->linear_acceleration.y;
             u_acc(2) = new_msg->linear_acceleration.z;
 
-            // q_last = X_state.segment<3>(3);   // last X2
-            // bg_last = X_state.segment<3>(9);  // last X4
-            // ba_last = X_state.segment<3>(12); // last X5
             //! changed by wz
             q_last.w() = X_state(3);
             q_last.x() = X_state(4);
@@ -379,31 +357,8 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             //      << Ft << endl;
 
             Vt = dt * diff_f_diff_n(q_last);
-            // cout << "Vt" << endl
-            //      << Vt << endl;
-
-            // acc_f_pub(u_acc, msg->header.stamp);
-            // X_state += dt * F_model(u_gyro, u_acc);
-            //! changed by wz
-            // cout << "X_state_old" << endl
-            //      << X_state << endl;
             X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
-            // cout << "X_state" << endl
-            //      << X_state << endl;
-
-            // if (X_state(3) > PI)  //! changed by wz
-            //     X_state(3) -= 2 * PI;
-            // if (X_state(3) < -PI)
-            //     X_state(3) += 2 * PI;
-            // if (X_state(4) > PI)
-            //     X_state(4) -= 2 * PI;
-            // if (X_state(4) < -PI)
-            //     X_state(4) += 2 * PI;
-            // if (X_state(5) > PI)
-            //     X_state(5) -= 2 * PI;
-            // if (X_state(5) < -PI)
-            //     X_state(5) += 2 * PI;
-            // cout << "!!!!!!!!!!!!!!!!!!!!position:" << X_state(0) << " " << X_state(1) << " " << X_state(2) << endl;
+           
 
             StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
 
@@ -436,39 +391,6 @@ int cnt = 0;
 Vector3d INNOVATION_;
 Matrix3d Rr_i;
 Vector3d tr_i; //  rigid body in imu frame
-// msg is imu in world
-// VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
-// {
-//     Matrix3d Rr_w; // rigid body in world
-//     Vector3d tr_w;
-//     Matrix3d Ri_w;
-//     Vector3d ti_w;
-//     Vector3d p_temp;
-//     p_temp(0) = msg->pose.pose.position.x;
-//     p_temp(1) = msg->pose.pose.position.y;
-//     p_temp(2) = msg->pose.pose.position.z;
-//     // quaternion2euler:  ZYX  roll pitch yaw
-//     Quaterniond q;
-//     q.w() = msg->pose.pose.orientation.w;
-//     q.x() = msg->pose.pose.orientation.x;
-//     q.y() = msg->pose.pose.orientation.y;
-//     q.z() = msg->pose.pose.orientation.z;
-
-//     // Euler transform
-//     //  Ri_w = q.toRotationMatrix();
-//     //  ti_w = p_temp;
-//     Rr_w = q.toRotationMatrix();
-//     tr_w = p_temp;
-//     Ri_w = Rr_w * Rr_i.inverse();
-//     ti_w = tr_w - Ri_w * tr_i;
-//     Vector3d euler = mat2euler(Ri_w);
-
-//     VectorXd pose = VectorXd::Random(6);
-//     pose.segment<3>(0) = ti_w;
-//     pose.segment<3>(3) = euler;
-
-//     return pose;
-// }
 
 //! changed by wz
 VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
@@ -541,33 +463,11 @@ void update_lastest_state()
         // return;
     }
 
-    // if (innovation(3) > 6)
-    //     innovation(3) -= 2 * PI;
-    // if (innovation(3) < -6)
-    //     innovation(3) += 2 * PI;
-    // if (innovation(4) > 6)
-    //     innovation(4) -= 2 * PI;
-    // if (innovation(4) < -6)
-    //     innovation(4) += 2 * PI;
-    // if (innovation(5) > 6)
-    //     innovation(5) -= 2 * PI;
-    // if (innovation(5) < -6)
-    //     innovation(5) += 2 * PI;
+
     INNOVATION_ = innovation_t.segment<3>(3);
     // X_state += Kt_kalmanGain * (innovation);
     X_state = boxplus(X_state, Kt_kalmanGain * (innovation));
-    // if (X_state(3) > PI)
-    //     X_state(3) -= 2 * PI;
-    // if (X_state(3) < -PI)
-    //     X_state(3) += 2 * PI;
-    // if (X_state(4) > PI)
-    //     X_state(4) -= 2 * PI;
-    // if (X_state(4) < -PI)
-    //     X_state(4) += 2 * PI;
-    // if (X_state(5) > PI)
-    //     X_state(5) -= 2 * PI;
-    // if (X_state(5) < -PI)
-    //     X_state(5) += 2 * PI;
+
     StateCovariance = StateCovariance - Kt_kalmanGain * Ct * StateCovariance;
 
     // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
@@ -694,12 +594,7 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         // R_odom = euler2mat(euler_odom);
         //! changed by wz
         R_odom = q_odom.toRotationMatrix();
-        // double cos_theta_theshold = cos(PI / 180 * 30);
-        // double cos_theta = (R_odom * Eigen::Vector3d(0, 0, 1)).dot(Eigen::Vector3d(0, 0, -1));
-        // if (cos_theta > cos_theta_theshold)
-        // {
-        //     ROS_ERROR("flip over!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        // }
+
 
 #if TimeSync
         // call back to the proper time
@@ -821,11 +716,7 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         X_state = sys_seq[0].first;
         StateCovariance = cov_seq[0];
 
-        // q_last = sys_seq[0].first.segment<3>(3);   // last X2
-        // bg_last = sys_seq[0].first.segment<3>(9);  // last X4
-        // ba_last = sys_seq[0].first.segment<3>(12); // last X5
-        //! changed by wz
-        // q_last = sys_seq[0].first.segment<4>(3);   // last X2
+
         q_last.w() = sys_seq[0].first(3);
         q_last.x() = sys_seq[0].first(4);
         q_last.y() = sys_seq[0].first(5);
@@ -851,18 +742,7 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
         // std::cout << "X_state" << std::endl
         //   << X_state << std::endl;
-        // if (X_state(3) > PI)  //! changed by wz
-        //     X_state(3) -= 2 * PI;
-        // if (X_state(3) < -PI)
-        //     X_state(3) += 2 * PI;
-        // if (X_state(4) > PI)
-        //     X_state(4) -= 2 * PI;
-        // if (X_state(4) < -PI)
-        //     X_state(4) += 2 * PI;
-        // if (X_state(5) > PI)
-        //     X_state(5) -= 2 * PI;
-        // if (X_state(5) < -PI)
-        //     X_state(5) += 2 * PI;
+
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
         // std::cout << "StateCovariance" << std::endl
         //           << StateCovariance << std::endl;
@@ -917,19 +797,7 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
             // return;
         }
 
-        // Prevent innovation changing suddenly when euler from -Pi to Pi
-        // if (innovation(3) > 6)
-        //     innovation(3) -= 2 * PI;
-        // if (innovation(3) < -6)w = angle_axis.angle() * angle_axis.axis();
-        //     innovation(3) += 2 * PI;
-        // if (innovation(4) > 6)
-        //     innovation(4) -= 2 * PI;
-        // if (innovation(4) < -6)
-        //     innovation(4) += 2 * PI;
-        // if (innovation(5) > 6)
-        //     innovation(5) -= 2 * PI;
-        // if (innovation(5) < -6)
-        //     innovation(5) += 2 * PI;
+  
 
         // Quaterniond test_q = Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)) * error_q;
         // std::cout << "\033[1;31m test_q" << std::endl
@@ -967,18 +835,6 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
 
         // std::cout << "X_state_update" << std::endl
         //           << X_state << std::endl;
-        // if (X_state(3) > PI)
-        //     X_state(3) -= 2 * PI;
-        // if (X_state(3) < -PI)
-        //     X_state(3) += 2 * PI;
-        // if (X_state(4) > PI)
-        //     X_state(4) -= 2 * PI;
-        // if (X_state(4) < -PI)
-        //     X_state(4) += 2 * PI;
-        // if (X_state(5) > PI)
-        //     X_state(5) -= 2 * PI;
-        // if (X_state(5) < -PI)
-        //     X_state(5) += 2 * PI;
         StateCovariance = StateCovariance - Kt_kalmanGain * Ct * StateCovariance;
 
         // system_pub(X_state, sys_seq[0].second.header.stamp); // choose to publish the repropagation or not
@@ -1126,12 +982,6 @@ int main(int argc, char **argv)
     initsys();
     cout << "initsys" << endl;
 
-    // cout << "======================" << endl;
-    // double r = atan2(1,-100);
-    // double p = asin(-0.707);
-    // double y = atan2(-1, -100);
-    // cout << "r: " << r << " p: " << p << " y: " << y << endl;
-    // cout << "======================" << endl;
 
     ros::spin();
 }
@@ -1157,10 +1007,6 @@ void acc_f_pub(Vector3d acc, ros::Time stamp)
     Accel_filtered.pose.orientation.y = q.y();
     Accel_filtered.pose.orientation.z = q.z();
 
-    // Accel_filtered.pose.orientation.w = q_gt.w();
-    // Accel_filtered.pose.orientation.x = q_gt.x();
-    // Accel_filtered.pose.orientation.y = q_gt.y();
-    // Accel_filtered.pose.orientation.z = q_gt.z();
 
     cout << "q_gt0: " << quaternion2euler(q_gt0) << endl;
     cout << "q_gt: " << quaternion2euler(q_gt) << endl;
@@ -1185,9 +1031,6 @@ void ahead_system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    // odom_fusion.twist.twist.linear.x = X_state_in(6);
-    // odom_fusion.twist.twist.linear.y = X_state_in(7);
-    // odom_fusion.twist.twist.linear.z = X_state_in(8);
     //! changed by wz
     odom_fusion.twist.twist.linear.x = X_state_in(7);
     odom_fusion.twist.twist.linear.y = X_state_in(8);
@@ -1220,9 +1063,6 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    // odom_fusion.twist.twist.linear.x = X_state_in(6);
-    // odom_fusion.twist.twist.linear.y = X_state_in(7);
-    // odom_fusion.twist.twist.linear.z = X_state_in(8);
     //! changed by wz
     odom_fusion.twist.twist.linear.x = X_state_in(7);
     odom_fusion.twist.twist.linear.y = X_state_in(8);
@@ -1245,18 +1085,6 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     double b2 = b0;
     double a1 = 2.0 * (ohm * ohm - 1.0) / c;
     double a2 = (1.0 - 2.0 * cos(PI / 4.0) * ohm + ohm * ohm) / c;
-    // if (first_flag)
-    // {
-    //     last_last_pos_center = pos_center;
-    //     first_flag = false;
-    //     return;
-    // }
-    // if (!first_flag & second_flag)
-    // {
-    //     last_pos_center = pos_center;
-    //     second_flag = false;
-    //     return;
-    // }
     current_pos_center = pos_center - a1 * last_pos_center - a2 * last_last_pos_center;
 
     pos_center_filter = b0 * current_pos_center + b1 * last_pos_center + b2 * last_last_pos_center;
@@ -1264,16 +1092,8 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     last_last_pos_center = last_pos_center;
 
     last_pos_center = current_pos_center;
-    // cout << "pos_center!!!!!!!!!!!!!!" << endl
-    //  << pos_center << endl;
-
     pos_center1 = pos_center + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
     pos_center2 = pos_center_filter + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
-    // cout << "q.toRotationMatrix()" << endl
-    //      << q.toRotationMatrix() << endl;
-    // cout << "imu_trans:" << imu_trans_x << " " << imu_trans_y << " " << imu_trans_z << endl;
-    // cout << "pos_center2???????????????????????????" << endl
-    //      << pos_center2 << endl;
     if(cutoff_freq < 1.0e-5)
     {
         odom_fusion.pose.pose.position.x = pos_center1(0);
@@ -1302,10 +1122,6 @@ void cam_system_pub(ros::Time stamp)
     nav_msgs::Odometry odom_fusion;
     odom_fusion.header.stamp = stamp;
     odom_fusion.header.frame_id = world_frame_id;
-    // odom_fusion.header.frame_id = "imu";
-    // odom_fusion.pose.pose.position.x = Z_measurement(0);
-    // odom_fusion.pose.pose.position.y = Z_measurement(1);
-    // odom_fusion.pose.pose.position.z = Z_measurement(2);
     odom_fusion.pose.pose.position.x = Z_measurement(0);
     odom_fusion.pose.pose.position.y = Z_measurement(1);
     odom_fusion.pose.pose.position.z = Z_measurement(2);
@@ -1319,20 +1135,6 @@ void cam_system_pub(ros::Time stamp)
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    // odom_fusion.twist.twist.linear.x = Z_measurement(3);
-    // odom_fusion.twist.twist.linear.y = Z_measurement(4);
-    // odom_fusion.twist.twist.linear.z = Z_measurement(5);
-
-    // odom_fusion.twist.twist.angular.x = INNOVATION_(0);
-    // odom_fusion.twist.twist.angular.y = INNOVATION_(1);
-    // odom_fusion.twist.twist.angular.z = INNOVATION_(2);
-    // Vector3d pp, qq, v, bg, ba;
-    // getState(pp, qq, v, bg, ba);
-    // odom_fusion.twist.twist.angular.x = ba(0);
-    // odom_fusion.twist.twist.angular.y = ba(1); ///??????why work??????????//////
-    // odom_fusion.twist.twist.angular.z = ba(2);
-    // odom_fusion.twist.twist.angular.x = diff_time;
-    // odom_fusion.twist.twist.angular.y = dt;
     cam_odom_pub.publish(odom_fusion);
 }
 
@@ -1413,14 +1215,7 @@ void initsys()
     Rt.bottomRightCorner(1, 1) = q_yaw_cov * Rt.bottomRightCorner(1, 1);
 }
 
-// void getState(Vector3d &p, Vector3d &q, Vector3d &v, Vector3d &bg, Vector3d &ba)
-// {
-//     p = X_state.segment<3>(0);
-//     q = X_state.segment<3>(3);
-//     v = X_state.segment<3>(6);
-//     bg = X_state.segment<3>(9);
-//     ba = X_state.segment<3>(12);
-// }
+
 //! changed by wz
 void getState(Vector3d &p, Quaterniond &q, Vector3d &v, Vector3d &bg, Vector3d &ba)
 {
@@ -1432,18 +1227,7 @@ void getState(Vector3d &p, Quaterniond &q, Vector3d &v, Vector3d &bg, Vector3d &
     ba = X_state.segment<3>(13);
 }
 
-// VectorXd get_filtered_acc(Vector3d acc)
-// {
-//     Vector3d q, ba;
-//     q = X_state.segment<3>(3);
-//     ba = X_state.segment<3>(12);
 
-//     // return (euler2mat(q)*(acc-ba-na));
-//     // return (q_gt.toRotationMatrix()*(acc-ba-na));  //false
-//     return ((acc - ba - na));
-//     // return ((acc-na));
-//     // return (euler2mat(q)*(acc));
-// }
 //! changed by wz
 VectorXd get_filtered_acc(Vector3d acc)
 {
@@ -1452,21 +1236,6 @@ VectorXd get_filtered_acc(Vector3d acc)
     return ((acc - ba - na));
 }
 
-// VectorXd F_model(Vector3d gyro, Vector3d acc)
-// {
-//     // IMU is in FLU frame
-//     // Transform IMU frame into "world" frame whose original point is FLU's original point and the XOY plain is parallel with the ground and z axis is up
-//     VectorXd f(VectorXd::Zero(stateSize));
-//     Vector3d p, q, v, bg, ba;
-//     getState(p, q, v, bg, ba);
-//     f.segment<3>(0) = v;
-//     f.segment<3>(3) = w_Body2Euler(q) * (gyro - bg - ng);
-//     f.segment<3>(6) = gravity + euler2mat(q) * (acc - ba - na);
-//     f.segment<3>(9) = nbg;
-//     f.segment<3>(12) = nba;
-
-//     return f;
-// }
 
 //! changed by wz
 VectorXd F_model(Vector3d gyro, Vector3d acc)
@@ -1506,7 +1275,7 @@ VectorXd upate_state_Quaterniond_F_model(VectorXd X_state, Vector3d gyro, Vector
     f.segment<3>(13) = nba;
 
     upate_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * (gravity + q * (acc - ba - na)) * dt * dt;
-    // upate_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt;
+
     Quaterniond delta_q(1.0, 0.5 * (gyro(0) - bg(0) - ng(0)) * dt, 0.5 * (gyro(1) - bg(1) - ng(1)) * dt, 0.5 * (gyro(2) - bg(2) - ng(2)) * dt);
     Quaterniond upate_q = (q * delta_q).normalized();
     upate_X_state(3) = upate_q.w();
@@ -1519,21 +1288,7 @@ VectorXd upate_state_Quaterniond_F_model(VectorXd X_state, Vector3d gyro, Vector
     return upate_X_state;
 }
 
-// VectorXd g_model()
-// {
-//     VectorXd g(VectorXd::Zero(measurementSize));
 
-//     g.segment<6>(0) = X_state.segment<6>(0);
-
-//     // if(g(3) > PI)  g(3) -= 2*PI;
-//     // if(g(3) < -PI) g(3) += 2*PI;
-//     // if(g(4) > PI)  g(4) -= 2*PI;
-//     // if(g(4) < -PI) g(4) += 2*PI;
-//     // if(g(5) > PI)  g(5) -= 2*PI;
-//     // if(g(5) < -PI) g(5) += 2*PI;
-
-//     return g;
-// }
 //! changed by wz
 VectorXd g_model()
 {
@@ -1541,56 +1296,12 @@ VectorXd g_model()
 
     g.segment<7>(0) = X_state.segment<7>(0);
 
-    // if(g(3) > PI)  g(3) -= 2*PI;
-    // if(g(3) < -PI) g(3) += 2*PI;
-    // if(g(4) > PI)  g(4) -= 2*PI;
-    // if(g(4) < -PI) g(4) += 2*PI;
-    // if(g(5) > PI)  g(5) -= 2*PI;
-    // if(g(5) < -PI) g(5) += 2*PI;
+
 
     return g;
 }
 
-// F_model G_model Jocobian
-// diff_f()/diff_x (x_t-1  ut  noise=0)   At     Ft = I+dt*At
-// MatrixXd diff_f_diff_x(Vector3d q_last, Vector3d gyro, Vector3d acc, Vector3d bg_last, Vector3d ba_last)
-// {
-//     double cr = cos(q_last(0));
-//     double sr = sin(q_last(0));
-//     double cp = cos(q_last(1));
-//     double sp = sin(q_last(1));
-//     double cy = cos(q_last(2));
-//     double sy = sin(q_last(2));
 
-//     // ng na = 0 nbg nba = 0
-//     double Ax = acc(0) - ba_last(0);
-//     double Ay = acc(1) - ba_last(1);
-//     double Az = acc(2) - ba_last(2);
-//     // double Wx = gyro(0) - bg_last(0);
-//     double Wy = gyro(1) - bg_last(1);
-//     double Wz = gyro(2) - bg_last(2);
-
-//     MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(stateSize, stateSize));
-//     MatrixXd diff_f_diff_x_jacobian_pqv(MatrixXd::Zero(stateSize_pqv, stateSize_pqv));
-
-//     diff_f_diff_x_jacobian_pqv << 0, 0, 0, 0, 0, 0, 1, 0, 0,
-//         0, 0, 0, 0, 0, 0, 0, 1, 0,
-//         0, 0, 0, 0, 0, 0, 0, 0, 1,
-//         0, 0, 0, (sp * (Wy * cr - Wz * sr)) / cp, (Wz * cr + Wy * sr) / (cp * cp), 0, 0, 0, 0,
-//         0, 0, 0, (-Wz * cr - Wy * sr), 0, 0, 0, 0, 0,
-//         0, 0, 0, (Wy * cr - Wz * sr) / cp, (sp * (Wz * cr + Wy * sr)) / (cp * cp), 0, 0, 0, 0,
-//         0, 0, 0, (Ay * (sr * sy + cr * cy * sp) + Az * (cr * sy - cy * sp * sr)), (Az * cp * cr * cy - Ax * cy * sp + Ay * cp * cy * sr), (Az * (cy * sr - cr * sp * sy) - Ay * (cr * cy + sp * sr * sy) - Ax * cp * sy), 0, 0, 0,
-//         0, 0, 0, (-Ay * (cy * sr - cr * sp * sy) - Az * (cr * cy + sp * sr * sy)), (Az * cp * cr * sy - Ax * sp * sy + Ay * cp * sr * sy), (Az * (sr * sy + cr * cy * sp) - Ay * (cr * sy - cy * sp * sr) + Ax * cp * cy), 0, 0, 0,
-//         0, 0, 0, (Ay * cp * cr - Az * cp * sr), (-Ax * cp - Az * cr * sp - Ay * sp * sr), 0, 0, 0, 0;
-
-//     diff_f_diff_x_jacobian.block<9, 9>(0, 0) = diff_f_diff_x_jacobian_pqv;
-//     diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -w_Body2Euler(q_last);
-//     diff_f_diff_x_jacobian.block<3, 3>(6, 12) = -euler2mat(q_last);
-
-//     return diff_f_diff_x_jacobian;
-
-//     // cp != 0 pitch != 90° !!!!!!!!!
-// }
 //? added by wz
 Matrix3d hat(Vector3d v)
 {
@@ -1605,8 +1316,7 @@ Matrix3d hat(Vector3d v)
 MatrixXd diff_f_diff_x(Quaterniond q_last, Vector3d gyro, Vector3d acc, Vector3d bg_last, Vector3d ba_last)
 {
 
-    // MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(stateSize, stateSize));
-    // MatrixXd diff_f_diff_x_jacobian_pqv(MatrixXd::Zero(stateSize_pqv, stateSize_pqv));
+   
     MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(errorstateSize, errorstateSize));
     diff_f_diff_x_jacobian.block<3, 3>(0, 6) = Eigen::Matrix3d::Identity(); // dp/dv
     diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -Eigen::Matrix3d::Identity();
@@ -1615,15 +1325,7 @@ MatrixXd diff_f_diff_x(Quaterniond q_last, Vector3d gyro, Vector3d acc, Vector3d
     return diff_f_diff_x_jacobian;
 }
 
-// diff_f()/diff_n (x_t-1  ut  noise=0)  Ut    Vt = dt*Ut
-// MatrixXd diff_f_diff_n(Vector3d q_last)
-// {
-//     MatrixXd diff_f_diff_n_jacobian(MatrixXd::Zero(stateSize, inputSize));
-//     diff_f_diff_n_jacobian.block<3, 3>(3, 0) = -w_Body2Euler(q_last);
-//     diff_f_diff_n_jacobian.block<3, 3>(6, 3) = -euler2mat(q_last);
 
-//     return diff_f_diff_n_jacobian;
-// }
 
 //! changed by wz
 MatrixXd diff_f_diff_n(Quaterniond q_last)
@@ -1634,22 +1336,12 @@ MatrixXd diff_f_diff_n(Quaterniond q_last)
 
     return diff_f_diff_n_jacobian;
 }
-// // diff_g()/diff_x  (xt~ noise=0)  Ct
-// MatrixXd diff_g_diff_x()
-// {
-//     MatrixXd diff_g_diff_x_jacobian(MatrixXd::Zero(measurementSize, stateSize));
-//     diff_g_diff_x_jacobian.block<3, 3>(0, 0) = MatrixXd::Identity(3, 3);
-//     diff_g_diff_x_jacobian.block<3, 3>(3, 3) = MatrixXd::Identity(3, 3);
 
-//     return diff_g_diff_x_jacobian;
-// }
 
 //! changed by wz
 MatrixXd diff_g_diff_x()
 {
-    // MatrixXd diff_g_diff_x_jacobian(MatrixXd::Zero(measurementSize, stateSize));
-    // diff_g_diff_x_jacobian.block<3, 3>(0, 0) = MatrixXd::Identity(3, 3);
-    // diff_g_diff_x_jacobian.block<3, 3>(3, 3) = MatrixXd::Identity(3, 3);
+ 
 
     MatrixXd diff_g_diff_x_jacobian(MatrixXd::Zero(measurementSize - 1, errorstateSize));
     diff_g_diff_x_jacobian.block<3, 3>(0, 0) = MatrixXd::Identity(3, 3);
@@ -1657,13 +1349,7 @@ MatrixXd diff_g_diff_x()
 
     return diff_g_diff_x_jacobian;
 }
-// // diff_g()/diff_v  (xt~ noise=0) Wt
-// MatrixXd diff_g_diff_v()
-// {
-//     MatrixXd diff_g_diff_v_jacobian(MatrixXd::Identity(measurementSize, measurementSize));
 
-//     return diff_g_diff_v_jacobian;
-// }
 //! changed by wz
 MatrixXd diff_g_diff_v()
 {
