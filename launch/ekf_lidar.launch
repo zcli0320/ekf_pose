@@ -3,7 +3,7 @@
     <node pkg="ekf" type="ekf" name="ekf" output="screen">
         <!-- <remap from="~imu" to="/mavros/imu/data"/> -->
         <remap from="~imu" to="/mavros/imu/data"/>
-        <remap from="~bodyodometry" to="/mavros/odometry/out"/> 
+        <remap from="~bodyodometry" to="/mavros/local_position/odom"/> 
         <!-- <remap from="~bodyodometry" to="/robot/dlo/odom_node/odom"/>  -->
 
         <remap from="~ekf_odom" to="/ekf/ekf_odom"/>

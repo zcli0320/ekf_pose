@@ -90,7 +90,6 @@ Matrix3d rotation_imu;
 Quaterniond q_last;
 Vector3d bg_last;
 Vector3d ba_last;
-
 // Qt imu covariance matrix  smaller believe system(imu) more
 double imu_trans_x = 0.0;
 double imu_trans_y = 0.0;
@@ -261,7 +260,6 @@ void re_propagate()
 #endif
     }
 }
-
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
     // wmywmy
