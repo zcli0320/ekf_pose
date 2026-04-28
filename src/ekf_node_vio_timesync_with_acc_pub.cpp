@@ -3,14 +3,18 @@
 #include <ros/ros.h>
 #include <ros/console.h>
 #include <sensor_msgs/Imu.h>
+#include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/Range.h>
 #include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <Eigen/Eigen>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <unsupported/Eigen/MatrixFunctions>
+#include <cmath>
 // #include <geometry_msgs/Accel.h>
 #include "conversion.h"
 
@@ -49,6 +53,9 @@ using namespace Eigen;
 ros::Publisher odom_pub, ahead_odom_pub;
 ros::Publisher cam_odom_pub;
 ros::Publisher acc_filtered_pub;
+ros::Publisher input_path_pub, ekf_path_pub, measurement_path_pub;
+ros::Publisher ekf_segments_pub;
+ros::Publisher gnss_path_pub;
 ros::Time imu_back_time = ros::Time(0), imu_front_time = ros::Time(0);
 
 // state
@@ -114,6 +121,23 @@ double time_odom_tag_now;
 
 double cutoff_freq = 20;
 double sample_freq = 120;
+int publish_warmup_frames = 0;
+double odom_jump_threshold = 2.0;
+double odom_reset_threshold = 6.0;
+double innovation_reject_threshold = 1.0;
+double innovation_reset_threshold = 2.0;
+double odom_source_switch_grace = 0.5;
+bool use_gnss = true;
+bool gnss_use_msg_covariance = true;
+double gnss_min_interval = 0.5;
+double gnss_min_cov_xy = 4.0;
+double gnss_min_cov_z = 9.0;
+double gnss_cov_scale = 1.0;
+double gnss_innovation_gate = 15.0;
+int gnss_min_status = 0;
+int reject_reinit_limit = 10;
+int path_publish_stride = 5;
+int path_max_points = 2000;
 string world_frame_id = "odom";
 
 //zyh added
@@ -309,6 +333,10 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             // cout << "\033[1;32m[ INFO] [IMU] [TimeSync] [seq_keep] [OK] \033[0m" << endl;
             time_now = new_msg->header.stamp.toSec();
             dt = time_now - time_last;
+            if (dt > 1.0e-4)
+            {
+                sample_freq = 1.0 / dt;
+            }
 
             if (odomtag_call)
             {
@@ -389,6 +417,128 @@ int cnt = 0;
 Vector3d INNOVATION_;
 Matrix3d Rr_i;
 Vector3d tr_i; //  rigid body in imu frame
+int consecutive_reject_count = 0;
+nav_msgs::Path input_path_msg;
+nav_msgs::Path ekf_path_msg;
+nav_msgs::Path measurement_path_msg;
+nav_msgs::Path gnss_path_msg;
+int input_path_counter = 0;
+int ekf_path_counter = 0;
+int measurement_path_counter = 0;
+int gnss_path_counter = 0;
+bool output_filter_initialized = false;
+Vector3d output_filter_state = Vector3d::Zero();
+std::string active_odom_source;
+double active_odom_source_start_time = -1.0;
+bool primary_odom_received = false;
+double primary_odom_first_time = -1.0;
+double fallback_odom_first_time = -1.0;
+bool odom_measurement_position_initialized = false;
+Vector3d last_odom_measurement_position = Vector3d::Zero();
+bool gnss_origin_initialized = false;
+bool gnss_alignment_initialized = false;
+double gnss_origin_lat_rad = 0.0;
+double gnss_origin_lon_rad = 0.0;
+double gnss_origin_alt = 0.0;
+double gnss_origin_cos_lat = 1.0;
+double last_gnss_update_time = -1.0;
+Vector3d gnss_alignment_offset = Vector3d::Zero();
+visualization_msgs::MarkerArray ekf_segment_markers;
+size_t ekf_active_segment_index = 0;
+
+visualization_msgs::Marker make_ekf_segment_marker(const std::string &frame_id, const ros::Time &stamp, int id)
+{
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = frame_id;
+    marker.header.stamp = stamp;
+    marker.ns = "ekf_segments";
+    marker.id = id;
+    marker.type = visualization_msgs::Marker::LINE_STRIP;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.pose.orientation.w = 1.0;
+    marker.scale.x = 0.04;
+    marker.color.r = 80.0 / 255.0;
+    marker.color.g = 1.0;
+    marker.color.b = 120.0 / 255.0;
+    marker.color.a = 1.0;
+    marker.lifetime = ros::Duration(0);
+    return marker;
+}
+
+void ensure_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
+{
+    if (ekf_segment_markers.markers.empty())
+    {
+        ekf_segment_markers.markers.push_back(make_ekf_segment_marker(frame_id, stamp, 0));
+        ekf_active_segment_index = 0;
+    }
+}
+
+void append_pose_to_ekf_segments(const std::string &frame_id,
+                                 const Vector3d &position,
+                                 const ros::Time &stamp)
+{
+    ensure_ekf_segment(frame_id, stamp);
+    visualization_msgs::Marker &marker = ekf_segment_markers.markers[ekf_active_segment_index];
+    marker.header.stamp = stamp;
+    geometry_msgs::Point point;
+    point.x = position.x();
+    point.y = position.y();
+    point.z = position.z();
+    marker.points.push_back(point);
+    ekf_segments_pub.publish(ekf_segment_markers);
+}
+
+void start_new_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
+{
+    ensure_ekf_segment(frame_id, stamp);
+    if (ekf_segment_markers.markers[ekf_active_segment_index].points.empty())
+    {
+        ekf_segment_markers.markers[ekf_active_segment_index].header.stamp = stamp;
+        ekf_segment_markers.markers[ekf_active_segment_index].header.frame_id = frame_id;
+        return;
+    }
+    int next_id = static_cast<int>(ekf_segment_markers.markers.size());
+    ekf_segment_markers.markers.push_back(make_ekf_segment_marker(frame_id, stamp, next_id));
+    ekf_active_segment_index = ekf_segment_markers.markers.size() - 1;
+    ekf_segments_pub.publish(ekf_segment_markers);
+}
+
+void append_pose_to_path(nav_msgs::Path &path_msg,
+                         ros::Publisher &path_pub,
+                         const std::string &frame_id,
+                         const Vector3d &position,
+                         const Quaterniond &orientation,
+                         const ros::Time &stamp,
+                         int &counter)
+{
+    counter++;
+    if (counter % std::max(1, path_publish_stride) != 0)
+    {
+        return;
+    }
+
+    geometry_msgs::PoseStamped pose_stamped;
+    pose_stamped.header.stamp = stamp;
+    pose_stamped.header.frame_id = frame_id;
+    pose_stamped.pose.position.x = position.x();
+    pose_stamped.pose.position.y = position.y();
+    pose_stamped.pose.position.z = position.z();
+    pose_stamped.pose.orientation.w = orientation.w();
+    pose_stamped.pose.orientation.x = orientation.x();
+    pose_stamped.pose.orientation.y = orientation.y();
+    pose_stamped.pose.orientation.z = orientation.z();
+
+    path_msg.header.stamp = stamp;
+    path_msg.header.frame_id = frame_id;
+    path_msg.poses.push_back(pose_stamped);
+    if (static_cast<int>(path_msg.poses.size()) > path_max_points)
+    {
+        path_msg.poses.erase(path_msg.poses.begin(),
+                             path_msg.poses.begin() + (path_msg.poses.size() - path_max_points));
+    }
+    path_pub.publish(path_msg);
+}
 
 //! changed by wz
 VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
@@ -431,6 +581,71 @@ VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
     // cout << "pose: " << pose << endl;
 
     return pose;
+}
+
+void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &stamp, const char *reason)
+{
+    ROS_WARN("Resetting EKF state from odom measurement at %.3f s: %s", stamp.toSec(), reason);
+    X_state.segment<3>(0) = odom_pose.segment<3>(0);
+    X_state.segment<4>(3) = odom_pose.segment<4>(3);
+    X_state.segment<3>(7).setZero();
+    StateCovariance = MatrixXd::Identity(errorstateSize, errorstateSize);
+    sys_seq.clear();
+    cov_seq.clear();
+    imu_front_time = ros::Time(0);
+    imu_back_time = ros::Time(0);
+    consecutive_reject_count = 0;
+    ekf_path_msg.poses.clear();
+    ekf_path_counter = 0;
+    output_filter_initialized = false;
+    start_new_ekf_segment(world_frame_id, stamp);
+}
+
+bool should_use_odom_source(const nav_msgs::Odometry::ConstPtr &msg,
+                            const std::string &source_name,
+                            bool is_primary)
+{
+    const double stamp = msg->header.stamp.toSec();
+    if (is_primary)
+    {
+        primary_odom_received = true;
+        if (primary_odom_first_time < 0.0)
+        {
+            primary_odom_first_time = stamp;
+        }
+    }
+    else if (fallback_odom_first_time < 0.0)
+    {
+        fallback_odom_first_time = stamp;
+    }
+
+    if (active_odom_source.empty())
+    {
+        if (!is_primary && (stamp - fallback_odom_first_time) < odom_source_switch_grace)
+        {
+            return false;
+        }
+        active_odom_source = source_name;
+        active_odom_source_start_time = stamp;
+        ROS_INFO("Using odometry source: %s", active_odom_source.c_str());
+        return true;
+    }
+
+    if (active_odom_source == source_name)
+    {
+        return true;
+    }
+
+    if (is_primary && (stamp - active_odom_source_start_time) <= odom_source_switch_grace)
+    {
+        ROS_WARN("Switching odometry source from %s to %s during startup grace window",
+                 active_odom_source.c_str(),
+                 source_name.c_str());
+        active_odom_source = source_name;
+        return true;
+    }
+
+    return false;
 }
 
 void update_lastest_state()
@@ -520,21 +735,16 @@ Vector3d rotation_2_lie_algebra(Matrix3d R)
     return omega;
 }
 
-void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
+void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 { // assume that the odom_tag from camera is sychronized with the imus and without delay. !!!
 
-    double delaytime_ms = (imu_back_time - msg->header.stamp).toSec() * 1000;
     double buffertime_ms = (imu_front_time - msg->header.stamp).toSec() * 1000;
     if (buffertime_ms > 0)
     {
-        ROS_ERROR("delaytime %.2f, buf_size %d", delaytime_ms, int(sys_seq.size()));
-        ROS_ERROR("odom time out of buffer time range: %.2fms, ekf may be wrong !!!!", buffertime_ms);
-    } 
-    // else
-    // {
-        // ROS_INFO("delaytime %.2f, buf_size %d", delaytime_ms, int(sys_seq.size()));
-        // ROS_INFO("odom time out of buffer time range: %.2fms", buffertime_ms);
-    // }
+        ROS_WARN_THROTTLE(1.0,
+                          "odom time %.2f ms older than IMU buffer front, falling back to latest-state update",
+                          buffertime_ms);
+    }
 
     // your code for update
     static Eigen::Vector3d last_pos(0, 0, 0);
@@ -550,12 +760,24 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         X_state.segment<4>(3) = odom_pose.segment<4>(3);
 
         world_frame_id = msg->header.frame_id;
+        input_path_msg.header.frame_id = world_frame_id;
+        measurement_path_msg.header.frame_id = world_frame_id;
+        ekf_path_msg.header.frame_id = world_frame_id;
+        ensure_ekf_segment(world_frame_id, msg->header.stamp);
 
         last_pos(0) = msg->pose.pose.position.x;
         last_pos(1) = msg->pose.pose.position.y;
         last_pos(2) = msg->pose.pose.position.z;
 
         first_odom_get_ = last_pos;
+        last_odom_measurement_position = odom_pose.segment<3>(0);
+        odom_measurement_position_initialized = true;
+        Quaterniond q_input_init;
+        q_input_init.w() = msg->pose.pose.orientation.w;
+        q_input_init.x() = msg->pose.pose.orientation.x;
+        q_input_init.y() = msg->pose.pose.orientation.y;
+        q_input_init.z() = msg->pose.pose.orientation.z;
+        append_pose_to_path(input_path_msg, input_path_pub, msg->header.frame_id, last_pos, q_input_init, msg->header.stamp, input_path_counter);
 
         // cout << "last_pos: "<<last_pos.transpose()<<endl;
 
@@ -570,21 +792,39 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         // cout << "\033[1;33m"
         //  << "odom_tag update"
         //  << "\033[0m" << endl;
-        if (abs(last_pos(0) - msg->pose.pose.position.x) > 0.5 ||
-            abs(last_pos(1) - msg->pose.pose.position.y) > 0.5 ||
-            abs(last_pos(2) - msg->pose.pose.position.z) > 0.5)
+        double odom_step = (last_pos - Vector3d(msg->pose.pose.position.x,
+                                                msg->pose.pose.position.y,
+                                                msg->pose.pose.position.z))
+                               .norm();
+        if (odom_step > odom_jump_threshold)
         {
-            // return;
+            VectorXd odom_pose = get_pose_from_VIOodom(msg);
+            ROS_WARN("Detected odom jump %.3f m at %.3f s", odom_step, msg->header.stamp.toSec());
+            reset_filter_to_measurement(odom_pose, msg->header.stamp, "odom jump");
+            last_pos(0) = msg->pose.pose.position.x;
+            last_pos(1) = msg->pose.pose.position.y;
+            last_pos(2) = msg->pose.pose.position.z;
+            system_pub(X_state, msg->header.stamp);
+            cam_system_pub(msg->header.stamp);
+            return;
         }
 
         last_pos(0) = msg->pose.pose.position.x;
         last_pos(1) = msg->pose.pose.position.y;
         last_pos(2) = msg->pose.pose.position.z;
+        Quaterniond q_input;
+        q_input.w() = msg->pose.pose.orientation.w;
+        q_input.x() = msg->pose.pose.orientation.x;
+        q_input.y() = msg->pose.pose.orientation.y;
+        q_input.z() = msg->pose.pose.orientation.z;
+        append_pose_to_path(input_path_msg, input_path_pub, msg->header.frame_id, last_pos, q_input, msg->header.stamp, input_path_counter);
 
         time_odom_tag_now = msg->header.stamp.toSec();
         //    double t = clock();
 
         VectorXd odom_pose = get_pose_from_VIOodom(msg);
+        last_odom_measurement_position = odom_pose.segment<3>(0);
+        odom_measurement_position_initialized = true;
         // Eigen::Vector3d euler_odom(odom_pose(3), odom_pose(4), odom_pose(5));
         //! changed by wz
         Eigen::Quaterniond q_odom(odom_pose(3), odom_pose(4), odom_pose(5), odom_pose(6));
@@ -593,12 +833,14 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         //! changed by wz
         R_odom = q_odom.toRotationMatrix();
 
+        Z_measurement.segment<3>(0) = odom_pose.segment<3>(0);
+        Z_measurement.segment<4>(3) = odom_pose.segment<4>(3);
+
 
 #if TimeSync
         // call back to the proper time
-        if (sys_seq.size() == 0)
+        if (sys_seq.size() == 0 || buffertime_ms > 0)
         {
-            // ROS_ERROR("sys_seq.size() == 0");
             update_lastest_state();
             cam_system_pub(msg->header.stamp);
             return;
@@ -614,10 +856,6 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         search_proper_frame(time_odom_tag_now);
 
 #endif
-        Z_measurement.segment<3>(0) = odom_pose.segment<3>(0);
-        // Z_measurement.segment<3>(3) = odom_pose.segment<3>(3);
-        //! changed by wz
-        Z_measurement.segment<4>(3) = odom_pose.segment<4>(3);
 
         // cam_system_pub(msg->header.stamp);
 
@@ -789,11 +1027,18 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         VectorXd innovation_t = gg;
 
         float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
-        if (pos_diff > POS_DIFF_THRESHOLD)
+        if (pos_diff > innovation_reject_threshold)
         {
-            ROS_ERROR("posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
-            // return;
+            ROS_WARN("Large innovation %.3f m at %.3f s", pos_diff, msg->header.stamp.toSec());
+            if (pos_diff > innovation_reset_threshold)
+            {
+                reset_filter_to_measurement(odom_pose, msg->header.stamp, "large innovation");
+                system_pub(X_state, msg->header.stamp);
+                cam_system_pub(msg->header.stamp);
+                return;
+            }
         }
+        consecutive_reject_count = 0;
 
   
 
@@ -843,6 +1088,137 @@ void vioodom_callback(const nav_msgs::Odometry::ConstPtr &msg)
 #endif
         cam_system_pub(msg->header.stamp);
     }
+}
+
+void vioodom_primary_callback(const nav_msgs::Odometry::ConstPtr &msg)
+{
+    if (should_use_odom_source(msg, "primary", true))
+    {
+        process_vioodom(msg);
+    }
+}
+
+void vioodom_fallback_callback(const nav_msgs::Odometry::ConstPtr &msg)
+{
+    if (should_use_odom_source(msg, "fallback", false))
+    {
+        process_vioodom(msg);
+    }
+}
+
+bool navsat_to_local_enu(const sensor_msgs::NavSatFix::ConstPtr &msg, Vector3d &enu)
+{
+    if (!std::isfinite(msg->latitude) || !std::isfinite(msg->longitude) || !std::isfinite(msg->altitude))
+    {
+        return false;
+    }
+
+    const double lat_rad = msg->latitude * PI / 180.0;
+    const double lon_rad = msg->longitude * PI / 180.0;
+    if (!gnss_origin_initialized)
+    {
+        gnss_origin_initialized = true;
+        gnss_origin_lat_rad = lat_rad;
+        gnss_origin_lon_rad = lon_rad;
+        gnss_origin_alt = msg->altitude;
+        gnss_origin_cos_lat = std::cos(gnss_origin_lat_rad);
+        ROS_INFO("Initialized GNSS origin: lat %.9f lon %.9f alt %.3f",
+                 msg->latitude,
+                 msg->longitude,
+                 msg->altitude);
+    }
+
+    static const double kEarthRadiusMeters = 6378137.0;
+    enu.x() = (lon_rad - gnss_origin_lon_rad) * gnss_origin_cos_lat * kEarthRadiusMeters;
+    enu.y() = (lat_rad - gnss_origin_lat_rad) * kEarthRadiusMeters;
+    enu.z() = msg->altitude - gnss_origin_alt;
+    return true;
+}
+
+void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
+{
+    if (!use_gnss || msg->status.status < gnss_min_status || first_frame_tag_odom)
+    {
+        return;
+    }
+
+    const double stamp = msg->header.stamp.toSec();
+    if (last_gnss_update_time > 0.0 && (stamp - last_gnss_update_time) < gnss_min_interval)
+    {
+        return;
+    }
+
+    Vector3d gnss_local;
+    if (!navsat_to_local_enu(msg, gnss_local))
+    {
+        return;
+    }
+
+    if (!gnss_alignment_initialized)
+    {
+        if (!odom_measurement_position_initialized)
+        {
+            return;
+        }
+        gnss_alignment_offset = last_odom_measurement_position - gnss_local;
+        gnss_alignment_initialized = true;
+        gnss_path_msg.header.frame_id = world_frame_id;
+        ROS_INFO("Initialized GNSS alignment offset from odom measurement: %.3f %.3f %.3f",
+                 gnss_alignment_offset.x(),
+                 gnss_alignment_offset.y(),
+                 gnss_alignment_offset.z());
+    }
+
+    const Vector3d z_gnss = gnss_local + gnss_alignment_offset;
+    const Vector3d innovation = z_gnss - X_state.segment<3>(0);
+    const double innovation_norm = innovation.norm();
+    if (innovation_norm > gnss_innovation_gate)
+    {
+        ROS_WARN_THROTTLE(1.0,
+                          "Rejecting GNSS update: innovation %.3f m exceeds threshold %.3f m",
+                          innovation_norm,
+                          gnss_innovation_gate);
+        return;
+    }
+
+    MatrixXd H = MatrixXd::Zero(3, errorstateSize);
+    H.block<3, 3>(0, 0) = Matrix3d::Identity();
+
+    Matrix3d R = Matrix3d::Zero();
+    if (gnss_use_msg_covariance && msg->position_covariance_type != sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN)
+    {
+        R(0, 0) = std::max(gnss_min_cov_xy, gnss_cov_scale * msg->position_covariance[0]);
+        R(1, 1) = std::max(gnss_min_cov_xy, gnss_cov_scale * msg->position_covariance[4]);
+        R(2, 2) = std::max(gnss_min_cov_z, gnss_cov_scale * msg->position_covariance[8]);
+    }
+    else
+    {
+        R(0, 0) = gnss_min_cov_xy;
+        R(1, 1) = gnss_min_cov_xy;
+        R(2, 2) = gnss_min_cov_z;
+    }
+
+    MatrixXd S = H * StateCovariance * H.transpose() + R;
+    MatrixXd K = StateCovariance * H.transpose() * S.inverse();
+    VectorXd dx = VectorXd::Zero(errorstateSize);
+    dx = K * innovation;
+    X_state = boxplus(X_state, dx);
+    StateCovariance = (MatrixXd::Identity(errorstateSize, errorstateSize) - K * H) * StateCovariance;
+
+    const Vector3d position_delta = dx.segment<3>(0);
+    for (auto &state_and_imu : sys_seq)
+    {
+        state_and_imu.first.segment<3>(0) += position_delta;
+    }
+    last_gnss_update_time = stamp;
+
+    append_pose_to_path(gnss_path_msg,
+                        gnss_path_pub,
+                        world_frame_id,
+                        z_gnss,
+                        Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)),
+                        msg->header.stamp,
+                        gnss_path_counter);
 }
 Matrix3d lie_algebra_2_rotation(Vector3d v)
 {
@@ -934,12 +1310,19 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "ekf");
     ros::NodeHandle n("~");
     ros::Subscriber s1 = n.subscribe("imu", 1000, imu_callback, ros::TransportHints().tcpNoDelay());
-    ros::Subscriber s2 = n.subscribe("bodyodometry", 40, vioodom_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber s2 = n.subscribe("bodyodometry_primary", 40, vioodom_primary_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber s3 = n.subscribe("bodyodometry_fallback", 40, vioodom_fallback_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s4 = n.subscribe("gt_", 40, gt_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber s5 = n.subscribe("gnss_fix", 40, gnss_fix_callback, ros::TransportHints().tcpNoDelay());
     odom_pub = n.advertise<nav_msgs::Odometry>("ekf_odom", 1000);             // freq = imu freq
     ahead_odom_pub = n.advertise<nav_msgs::Odometry>("ahead_ekf_odom", 1000); // freq = imu freq
     cam_odom_pub = n.advertise<nav_msgs::Odometry>("cam_ekf_odom", 1000);
     acc_filtered_pub = n.advertise<geometry_msgs::PoseStamped>("acc_filtered", 1000);
+    input_path_pub = n.advertise<nav_msgs::Path>("input_path", 10);
+    ekf_path_pub = n.advertise<nav_msgs::Path>("ekf_path", 10);
+    measurement_path_pub = n.advertise<nav_msgs::Path>("measurement_path", 10);
+    gnss_path_pub = n.advertise<nav_msgs::Path>("gnss_path", 10);
+    ekf_segments_pub = n.advertise<visualization_msgs::MarkerArray>("ekf_segments", 10);
 
     n.getParam("gyro_cov", gyro_cov);
     n.getParam("acc_cov", acc_cov);
@@ -953,6 +1336,23 @@ int main(int argc, char **argv)
     n.getParam("offset_px", offset_px);
     n.getParam("offset_py", offset_py);
     n.getParam("offset_pz", offset_pz);
+    n.getParam("publish_warmup_frames", publish_warmup_frames);
+    n.getParam("odom_jump_threshold", odom_jump_threshold);
+    n.getParam("odom_reset_threshold", odom_reset_threshold);
+    n.getParam("innovation_reject_threshold", innovation_reject_threshold);
+    n.getParam("innovation_reset_threshold", innovation_reset_threshold);
+    n.getParam("odom_source_switch_grace", odom_source_switch_grace);
+    n.getParam("use_gnss", use_gnss);
+    n.getParam("gnss_use_msg_covariance", gnss_use_msg_covariance);
+    n.getParam("gnss_min_interval", gnss_min_interval);
+    n.getParam("gnss_min_cov_xy", gnss_min_cov_xy);
+    n.getParam("gnss_min_cov_z", gnss_min_cov_z);
+    n.getParam("gnss_cov_scale", gnss_cov_scale);
+    n.getParam("gnss_innovation_gate", gnss_innovation_gate);
+    n.getParam("gnss_min_status", gnss_min_status);
+    n.getParam("reject_reinit_limit", reject_reinit_limit);
+    n.getParam("path_publish_stride", path_publish_stride);
+    n.getParam("path_max_points", path_max_points);
     
 
     cout << "Q:" << gyro_cov << " " << acc_cov << " R: " << position_cov << " " << q_rp_cov << " " << q_yaw_cov << endl;
@@ -1066,54 +1466,63 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.twist.twist.linear.y = X_state_in(8);
     odom_fusion.twist.twist.linear.z = X_state_in(9);
 
-    Vector3d pos_center(X_state_in(0), X_state_in(1), X_state_in(2)),pos_center1, pos_center2;
-    Vector3d pos_center_filter;
-
-    // static bool first_flag = true;
-    // static bool second_flag = true;
-    static Vector3d last_pos_center(pos_center);
-    static Vector3d last_last_pos_center(pos_center);
-    static Vector3d current_pos_center(pos_center);
-
-    double freq = sample_freq / cutoff_freq;
-    double ohm = tan(PI / freq);
-    double c = 1.0 + 2.0 * cos(PI / 4.0) * ohm + ohm * ohm;
-    double b0 = ohm * ohm / c;
-    double b1 = 2.0 * b0;
-    double b2 = b0;
-    double a1 = 2.0 * (ohm * ohm - 1.0) / c;
-    double a2 = (1.0 - 2.0 * cos(PI / 4.0) * ohm + ohm * ohm) / c;
-    current_pos_center = pos_center - a1 * last_pos_center - a2 * last_last_pos_center;
-
-    pos_center_filter = b0 * current_pos_center + b1 * last_pos_center + b2 * last_last_pos_center;
-
-    last_last_pos_center = last_pos_center;
-
-    last_pos_center = current_pos_center;
-    pos_center1 = pos_center + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
-    pos_center2 = pos_center_filter + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
-    if(cutoff_freq < 1.0e-5)
+    Vector3d pos_center(X_state_in(0), X_state_in(1), X_state_in(2));
+    Vector3d pos_center_world = pos_center + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
+    Vector3d pos_center_output = pos_center_world;
+    if (cutoff_freq > 1.0e-5)
     {
-        odom_fusion.pose.pose.position.x = pos_center1(0);
-        odom_fusion.pose.pose.position.y = pos_center1(1);
-        odom_fusion.pose.pose.position.z = pos_center1(2);
-    } else {
-        odom_fusion.pose.pose.position.x = pos_center2(0);
-        odom_fusion.pose.pose.position.y = pos_center2(1);
-        odom_fusion.pose.pose.position.z = pos_center2(2);
+        if (!output_filter_initialized)
+        {
+            output_filter_state = pos_center_world;
+            output_filter_initialized = true;
+        }
+        else
+        {
+            double dt_filter = dt;
+            if (dt_filter <= 1.0e-5 && sample_freq > 1.0e-5)
+            {
+                dt_filter = 1.0 / sample_freq;
+            }
+            if (dt_filter > 1.0e-5)
+            {
+                double alpha = exp(-2.0 * PI * cutoff_freq * dt_filter);
+                output_filter_state = alpha * output_filter_state + (1.0 - alpha) * pos_center_world;
+            }
+            else
+            {
+                output_filter_state = pos_center_world;
+            }
+        }
+        pos_center_output = output_filter_state;
     }
+
+    odom_fusion.pose.pose.position.x = pos_center_output(0);
+    odom_fusion.pose.pose.position.y = pos_center_output(1);
+    odom_fusion.pose.pose.position.z = pos_center_output(2);
 
     odom_fusion.pose.pose.position.x += offset_px;
     odom_fusion.pose.pose.position.y += offset_py;
     odom_fusion.pose.pose.position.z += offset_pz;
 
     static int cnt = 0;
-    if(cnt < 1000){
+    if(cnt < publish_warmup_frames){
         cnt++;
         return;
     } 
-    
+
     odom_pub.publish(odom_fusion);
+    append_pose_to_path(ekf_path_msg, ekf_path_pub, world_frame_id, Vector3d(odom_fusion.pose.pose.position.x,
+                                                                             odom_fusion.pose.pose.position.y,
+                                                                             odom_fusion.pose.pose.position.z),
+                        q, stamp, ekf_path_counter);
+    if (ekf_path_counter % std::max(1, path_publish_stride) == 0)
+    {
+        append_pose_to_ekf_segments(world_frame_id,
+                                    Vector3d(odom_fusion.pose.pose.position.x,
+                                             odom_fusion.pose.pose.position.y,
+                                             odom_fusion.pose.pose.position.z),
+                                    stamp);
+    }
 }
 void cam_system_pub(ros::Time stamp)
 {
@@ -1134,6 +1543,10 @@ void cam_system_pub(ros::Time stamp)
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
     cam_odom_pub.publish(odom_fusion);
+    append_pose_to_path(measurement_path_msg, measurement_path_pub, world_frame_id, Vector3d(odom_fusion.pose.pose.position.x,
+                                                                                              odom_fusion.pose.pose.position.y,
+                                                                                              odom_fusion.pose.pose.position.z),
+                        q, stamp, measurement_path_counter);
 }
 
 // process model

@@ -1,0 +1,12 @@
+*.bag
+*.bag.active
+*.orig.bag
+.catkin_tools/
+.codex
+.codex/
+build/
+devel/
+install/
+logs/
+*.pyc
+__pycache__/

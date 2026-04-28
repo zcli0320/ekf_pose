@@ -1,10 +1,15 @@
 <launch>
+    <arg name="imu_topic" default="/mavros/imu/data"/>
+    <arg name="odom_primary_topic" default="/mavros/odometry/in"/>
+    <arg name="odom_fallback_topic" default="/unused_odom_fallback"/>
+    <arg name="gnss_topic" default="/mavros/global_position/global"/>
+    <arg name="use_gnss" default="true"/>
     
     <node pkg="ekf" type="ekf" name="ekf" output="screen">
-        <!-- <remap from="~imu" to="/mavros/imu/data"/> -->
-        <remap from="~imu" to="/mavros/imu/data"/>
-        <remap from="~bodyodometry" to="/mavros/local_position/odom"/> 
-        <!-- <remap from="~bodyodometry" to="/robot/dlo/odom_node/odom"/>  -->
+        <remap from="~imu" to="$(arg imu_topic)"/>
+        <remap from="~bodyodometry_primary" to="$(arg odom_primary_topic)"/>
+        <remap from="~bodyodometry_fallback" to="$(arg odom_fallback_topic)"/>
+        <remap from="~gnss_fix" to="$(arg gnss_topic)"/>
 
         <remap from="~ekf_odom" to="/ekf/ekf_odom"/>
 
@@ -29,8 +34,25 @@
         <!-- Rt -->
         <param name="position_cov" type="double" value="0.01"/>
         <param name="q_rp_cov" type="double" value="0.01"/>
-        <param name="q_yaw_cov" type="double" value="0.01"/>   
-        <param name="cutoff_freq" type="double" value="20"/>   
+        <param name="q_yaw_cov" type="double" value="0.01"/>
+        <param name="cutoff_freq" type="double" value="0.0"/>
+        <param name="publish_warmup_frames" type="int" value="0"/>
+        <param name="odom_jump_threshold" type="double" value="2.0"/>
+        <param name="odom_reset_threshold" type="double" value="6.0"/>
+        <param name="innovation_reject_threshold" type="double" value="1.0"/>
+        <param name="innovation_reset_threshold" type="double" value="2.0"/>
+        <param name="odom_source_switch_grace" type="double" value="0.5"/>
+        <param name="use_gnss" type="bool" value="$(arg use_gnss)"/>
+        <param name="gnss_use_msg_covariance" type="bool" value="true"/>
+        <param name="gnss_min_interval" type="double" value="1.0"/>
+        <param name="gnss_min_cov_xy" type="double" value="100.0"/>
+        <param name="gnss_min_cov_z" type="double" value="144.0"/>
+        <param name="gnss_cov_scale" type="double" value="1.0"/>
+        <param name="gnss_innovation_gate" type="double" value="15.0"/>
+        <param name="gnss_min_status" type="int" value="0"/>
+        <param name="reject_reinit_limit" type="int" value="0"/>
+        <param name="path_publish_stride" type="int" value="12"/>
+        <param name="path_max_points" type="int" value="1500"/>
     </node>
 
 </launch>
