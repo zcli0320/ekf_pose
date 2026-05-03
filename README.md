@@ -215,20 +215,81 @@ rosbag record -O /tmp/ekf_eval.bag \
 - `ekf_step`：EKF 相邻输出点位移，用于发现跳变。
 - reset 次数和 GNSS reject 次数。
 
+也可以直接运行自动 benchmark：
+
+```bash
+source /opt/ros/noetic/setup.bash
+source /home/zcl/catkin_ws/devel/setup.bash
+cd /home/zcl/catkin_ws/src/ekf
+scripts/benchmark_gnss_fusion.py all_gps.bag --output /tmp/ekf_fusion_benchmark_all_gps.json
+```
+
+脚本会回放同一个 bag，比较关闭 GNSS、保守 GNSS 和较强 GNSS 等参数组合，并输出 JSON 指标。
+
 当前 `all_gps.bag` 测试结果：
 
 ```text
 关闭 GNSS:
-ekf_vs_odom mean=0.0588m, p95=0.1275m, max=0.5254m
-ekf_step max=0.2826m
+ekf_vs_odom mean=0.0891m, p95=0.2690m, max=1.3127m
+ekf_vs_aligned_gnss mean=0.9888m, p95=1.0842m
+ekf_step max=0.6505m, reset=0
 
-开启 GNSS:
-ekf_vs_odom mean=0.0625m, p95=0.1964m, max=0.4774m
-ekf_vs_aligned_gnss mean=0.0992m, p95=0.2005m
-ekf_step max=0.2979m
+开启 GNSS，gnss_min_interval=1.0, gnss_min_cov_xy=100.0, gnss_min_cov_z=144.0:
+ekf_vs_odom mean=0.0544m, p95=0.1700m, max=0.4938m
+ekf_vs_aligned_gnss mean=0.0930m, p95=0.1817m
+ekf_step max=0.1977m, reset=0, gnss_reject=0
 ```
 
-结论：在 `all_gps.bag` 中，GNSS 接入没有破坏 odom 主观测一致性，也没有引入明显跳变。由于该 bag 中 odom 本身质量较好，GNSS 主要体现为冗余位置约束，而不是显著提升短时精度。
+结论：在 `all_gps.bag` 中，强 GNSS 权重会拉扯轨迹；弱 GNSS 约束可以明显改善长期位置一致性，同时保持 odom 主观测一致性和较小 step 跳变。
+
+## 本次优化记录
+
+更新时间：2026-05-04。
+
+本次优化保持状态量、观测量、topic、frame_id 和消息类型不变，只改进 EKF 内部数值稳定性、GNSS 参数和评估流程。
+
+状态量和矩阵对应关系：
+
+- nominal state：`p(0:2), q(3:6), v(7:9), bg(10:12), ba(13:15)`，共 16 维。
+- error state：`dp, dtheta, dv, dbg, dba`，共 15 维。
+- IMU 输入：`gyro, acc`，对应 6x6 `Qt`。
+- odom 观测：`position + attitude error`，对应 6 维 `Rt`。
+- GNSS 观测：只更新 position block，对应 3x15 `H` 和 GNSS 独立 `R`。
+
+代码改动：
+
+- IMU 姿态预测改为基于角速度指数映射的四元数增量，避免小角度线性四元数积分长期引入归一化误差。
+- 修正状态传播函数内部依赖全局 `X_state` 的问题，使前向预测和历史重传播真正使用传入状态。
+- odom update 和 GNSS update 的协方差更新改为 Joseph form，并在预测和更新后对协方差做对称化，降低数值非对称和负定风险。
+- 增加四元数归一化和非单调 IMU 时间戳检查，避免异常输入污染状态传播。
+- 增加 `scripts/benchmark_gnss_fusion.py`，自动回放 bag 并比较多组 GNSS 参数，输出 JSON 评估结果。
+
+本轮保存的最佳默认参数位于 `launch/ekf_lidar.launch`：
+
+```xml
+gyro_cov = 0.05
+acc_cov = 0.20
+position_cov = 0.005
+q_rp_cov = 0.01
+q_yaw_cov = 0.01
+cutoff_freq = 8.0
+gnss_min_interval = 1.0
+gnss_min_cov_xy = 100.0
+gnss_min_cov_z = 144.0
+gnss_cov_scale = 1.0
+gnss_innovation_gate = 15.0
+```
+
+本轮自动评估命令：
+
+```bash
+source /opt/ros/noetic/setup.bash
+source /home/zcl/catkin_ws/devel/setup.bash
+cd /home/zcl/catkin_ws/src/ekf
+scripts/benchmark_gnss_fusion.py all_gps.bag --output /tmp/ekf_fusion_benchmark_all_gps_v2.json
+```
+
+最佳组合为 `gnss_very_conservative`，也就是当前默认参数。该组合在 `all_gps.bag` 上 reset 次数为 0，GNSS reject 次数为 0，`ekf_step max` 从关闭 GNSS 的 0.6505 m 降到 0.1977 m。
 
 ## 注意事项
 

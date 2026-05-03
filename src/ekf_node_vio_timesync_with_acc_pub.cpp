@@ -48,7 +48,7 @@ using namespace Eigen;
 #define TimeSync 1 // time synchronize or not
 #define RePub 0    // re publish the odom when repropagation
 
-#define POS_DIFF_THRESHOLD (0.3f)
+#define POS_DIFF_THRESHOLD (0.8f)
 
 ros::Publisher odom_pub, ahead_odom_pub;
 ros::Publisher cam_odom_pub;
@@ -112,6 +112,7 @@ double dt = 0.005; // second
 double t_last, t_now;
 bool first_frame_imu = true;
 bool first_frame_tag_odom = true;
+bool ekf_initialized = false;
 bool test_odomtag_call = false;
 bool odomtag_call = false;
 
@@ -139,6 +140,47 @@ int reject_reinit_limit = 10;
 int path_publish_stride = 5;
 int path_max_points = 2000;
 string world_frame_id = "odom";
+
+void normalize_state_quaternion(VectorXd &state)
+{
+    Quaterniond q(state(3), state(4), state(5), state(6));
+    if (!std::isfinite(q.w()) || !std::isfinite(q.x()) || !std::isfinite(q.y()) || !std::isfinite(q.z()) || q.norm() < 1.0e-12)
+    {
+        q = Quaterniond::Identity();
+    }
+    else
+    {
+        q.normalize();
+    }
+    state(3) = q.w();
+    state(4) = q.x();
+    state(5) = q.y();
+    state(6) = q.z();
+}
+
+Quaterniond delta_quaternion_from_gyro(const Vector3d &omega, double dt)
+{
+    const Vector3d delta_theta = omega * dt;
+    const double angle = delta_theta.norm();
+    if (angle < 1.0e-12)
+    {
+        return Quaterniond::Identity();
+    }
+    return Quaterniond(AngleAxisd(angle, delta_theta / angle));
+}
+
+void symmetrize_covariance(MatrixXd &covariance)
+{
+    covariance = 0.5 * (covariance + covariance.transpose());
+}
+
+void joseph_covariance_update(const MatrixXd &H, const MatrixXd &K, const MatrixXd &R)
+{
+    const MatrixXd I = MatrixXd::Identity(errorstateSize, errorstateSize);
+    const MatrixXd IKH = I - K * H;
+    StateCovariance = IKH * StateCovariance * IKH.transpose() + K * R * K.transpose();
+    symmetrize_covariance(StateCovariance);
+}
 
 //zyh added
 double offset_px, offset_py, offset_pz;
@@ -249,6 +291,11 @@ void re_propagate()
     {
         // re-prediction for the rightframe
         dt = sys_seq[i].second.header.stamp.toSec() - sys_seq[i - 1].second.header.stamp.toSec();
+        if (dt <= 0.0)
+        {
+            ROS_WARN_THROTTLE(1.0, "Skipping non-monotonic IMU repropagation step: dt %.6f s", dt);
+            continue;
+        }
 
         u_gyro(0) = sys_seq[i].second.angular_velocity.x;
         u_gyro(1) = sys_seq[i].second.angular_velocity.y;
@@ -278,6 +325,7 @@ void re_propagate()
         X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
 
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
+        symmetrize_covariance(StateCovariance);
 
 #if RePub
         system_pub(X_state, sys_seq[i].second.header.stamp); // choose to publish the repropagation or not
@@ -322,7 +370,9 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             seq_keep(new_msg); // keep before propagation
 #endif
 
-            system_pub(X_state, new_msg->header.stamp);
+            if (ekf_initialized) {
+                system_pub(X_state, new_msg->header.stamp);
+            }
             // cout << "first frame imu" << endl;
         }
         else
@@ -333,6 +383,14 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             // cout << "\033[1;32m[ INFO] [IMU] [TimeSync] [seq_keep] [OK] \033[0m" << endl;
             time_now = new_msg->header.stamp.toSec();
             dt = time_now - time_last;
+            if (dt <= 0.0)
+            {
+                ROS_WARN_THROTTLE(1.0,
+                                  "Ignoring out-of-order IMU sample: dt %.6f s at %.3f s",
+                                  dt,
+                                  new_msg->header.stamp.toSec());
+                return;
+            }
             if (dt > 1.0e-4)
             {
                 sample_freq = 1.0 / dt;
@@ -387,6 +445,7 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
            
 
             StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
+            symmetrize_covariance(StateCovariance);
 
             time_last = time_now;
 
@@ -399,8 +458,10 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             //     test_odomtag_call = false;
             //     system_pub(msg->header.stamp);
             // }
-            system_pub(X_state, new_msg->header.stamp);
-            ahead_system_pub(X_state_ahead, new_msg->header.stamp);
+            if (ekf_initialized) {
+                system_pub(X_state, new_msg->header.stamp);
+                ahead_system_pub(X_state_ahead, new_msg->header.stamp);
+            }
 
             // cout << "[IMU] [TimeSync] [OK]" << endl;
 
@@ -422,12 +483,13 @@ nav_msgs::Path input_path_msg;
 nav_msgs::Path ekf_path_msg;
 nav_msgs::Path measurement_path_msg;
 nav_msgs::Path gnss_path_msg;
+bool output_filter_initialized = false;
+Vector3d output_filter_state = Vector3d::Zero();
 int input_path_counter = 0;
 int ekf_path_counter = 0;
 int measurement_path_counter = 0;
 int gnss_path_counter = 0;
-bool output_filter_initialized = false;
-Vector3d output_filter_state = Vector3d::Zero();
+
 std::string active_odom_source;
 double active_odom_source_start_time = -1.0;
 bool primary_odom_received = false;
@@ -558,6 +620,7 @@ VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
     q.x() = msg->pose.pose.orientation.x;
     q.y() = msg->pose.pose.orientation.y;
     q.z() = msg->pose.pose.orientation.z;
+    q.normalize();
 
     // Euler transform
     //  Ri_w = q.toRotationMatrix();
@@ -588,6 +651,7 @@ void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &sta
     ROS_WARN("Resetting EKF state from odom measurement at %.3f s: %s", stamp.toSec(), reason);
     X_state.segment<3>(0) = odom_pose.segment<3>(0);
     X_state.segment<4>(3) = odom_pose.segment<4>(3);
+    normalize_state_quaternion(X_state);
     X_state.segment<3>(7).setZero();
     StateCovariance = MatrixXd::Identity(errorstateSize, errorstateSize);
     sys_seq.clear();
@@ -657,7 +721,8 @@ void update_lastest_state()
     Wt = diff_g_diff_v();
     // cout << "Wt: " << Wt << endl;
 
-    Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + Wt * Rt * Wt.transpose()).inverse();
+    const MatrixXd R_odom = Wt * Rt * Wt.transpose();
+    Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom).inverse();
     // cout << "Kt_kalmanGain: " << Kt_kalmanGain << endl;
     VectorXd gg = g_model();
     // VectorXd innovation = Z_measurement - gg;
@@ -665,14 +730,18 @@ void update_lastest_state()
     VectorXd innovation = VectorXd::Zero(6);
     innovation.segment<3>(0) = Z_measurement.segment<3>(0) - gg.segment<3>(0);
     Quaterniond q_gg(gg(3), gg(4), gg(5), gg(6));
+    q_gg.normalize();
     Quaterniond q_Z_measurement(Z_measurement(3), Z_measurement(4), Z_measurement(5), Z_measurement(6));
-    innovation.segment<3>(3) = (q_Z_measurement * q_gg.inverse()).vec();
+    q_Z_measurement.normalize();
+    Quaterniond error_q = q_gg.inverse() * q_Z_measurement;
+    error_q.normalize();
+    innovation.segment<3>(3) = rotation_2_lie_algebra(error_q.toRotationMatrix());
     VectorXd innovation_t = gg;
     // Prevent innovation changing suddenly when euler from -Pi to Pi
     float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
     if (pos_diff > POS_DIFF_THRESHOLD)
     {
-        ROS_ERROR("posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
+        ROS_WARN_THROTTLE(5.0, "posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
         // return;
     }
 
@@ -681,7 +750,7 @@ void update_lastest_state()
     // X_state += Kt_kalmanGain * (innovation);
     X_state = boxplus(X_state, Kt_kalmanGain * (innovation));
 
-    StateCovariance = StateCovariance - Kt_kalmanGain * Ct * StateCovariance;
+    joseph_covariance_update(Ct, Kt_kalmanGain, R_odom);
 
     // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
     // cout << "z " << Z_measurement(2) << " k " << Kt_kalmanGain(2) << " inn " << innovation(2) << endl;
@@ -696,9 +765,6 @@ void update_lastest_state()
         cout << "\ninnovation: \n"
              << INNOVATION_ << endl;
     // monitor the position changing
-    if ((innovation(0) > 1.5) || (innovation(1) > 1.5) || (innovation(2) > 1.5) ||
-        (innovation(0) < -1.5) || (innovation(1) < -1.5) || (innovation(2) < -1.5))
-        ROS_ERROR("posintion diff too much between measurement and model prediction!!!");
     if (cnt == 10 || cnt == 50 || cnt == 90)
     {
         // cout << "Ct: \n" << Ct << "\nWt:\n" << Wt << endl;
@@ -758,6 +824,9 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // X_state.segment<3>(3) = odom_pose.segment<3>(3);
         //! changed by wz
         X_state.segment<4>(3) = odom_pose.segment<4>(3);
+        normalize_state_quaternion(X_state);
+        X_state.segment<3>(7) << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z;
+        ekf_initialized = true;
 
         world_frame_id = msg->header.frame_id;
         input_path_msg.header.frame_id = world_frame_id;
@@ -874,7 +943,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
         if (pos_diff > POS_DIFF_THRESHOLD)
         {
-            ROS_ERROR("posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
+            ROS_WARN_THROTTLE(5.0, "posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
             return;
         }
         if (innovation(3) > 6)
@@ -902,7 +971,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
             X_state(5) -= 2 * PI;
         if (X_state(5) < -PI)
             X_state(5) += 2 * PI;
-        StateCovariance = StateCovariance - Kt_kalmanGain * Ct * StateCovariance;
+        joseph_covariance_update(Ct, Kt_kalmanGain, Wt * Rt * Wt.transpose());
 
         // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
         // cout << "z " << Z_measurement(2) << " k " << Kt_kalmanGain(2) << " inn " << innovation(2) << endl;
@@ -980,6 +1049,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         //   << X_state << std::endl;
 
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
+        symmetrize_covariance(StateCovariance);
         // std::cout << "StateCovariance" << std::endl
         //           << StateCovariance << std::endl;
 
@@ -992,7 +1062,8 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // std::cout << "Wt" << std::endl
         //           << Wt << std::endl;
 
-        Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + Wt * Rt * Wt.transpose()).inverse();
+        const MatrixXd R_odom_meas = Wt * Rt * Wt.transpose();
+        Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom_meas).inverse();
         // std::cout << "Kt_kalmanGain" << std::endl
         //           << Kt_kalmanGain << std::endl;
 
@@ -1007,12 +1078,12 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // std::cout << "innovation_first" << std::endl
         //           << innovation << std::endl;
         Quaterniond q_gg(gg(3), gg(4), gg(5), gg(6));
-        q_gg.normalized();
+        q_gg.normalize();
         Quaterniond q_Z_measurement(Z_measurement(3), Z_measurement(4), Z_measurement(5), Z_measurement(6));
-        q_Z_measurement.normalized();
+        q_Z_measurement.normalize();
         // Quaterniond error_q = q_Z_measurement * q_gg.inverse();
         Quaterniond error_q = q_gg.inverse() * q_Z_measurement;
-        error_q.normalized();
+        error_q.normalize();
         // cout << "error_q.vec()" << endl
         //      << error_q.vec() << endl;
         Matrix3d error_R = error_q.toRotationMatrix();
@@ -1078,7 +1149,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 
         // std::cout << "X_state_update" << std::endl
         //           << X_state << std::endl;
-        StateCovariance = StateCovariance - Kt_kalmanGain * Ct * StateCovariance;
+        joseph_covariance_update(Ct, Kt_kalmanGain, R_odom_meas);
 
         // system_pub(X_state, sys_seq[0].second.header.stamp); // choose to publish the repropagation or not
         // std::cout << "re_propagate" << std::endl;
@@ -1203,7 +1274,7 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     VectorXd dx = VectorXd::Zero(errorstateSize);
     dx = K * innovation;
     X_state = boxplus(X_state, dx);
-    StateCovariance = (MatrixXd::Identity(errorstateSize, errorstateSize) - K * H) * StateCovariance;
+    joseph_covariance_update(H, K, R);
 
     const Vector3d position_delta = dx.segment<3>(0);
     for (auto &state_and_imu : sys_seq)
@@ -1252,10 +1323,11 @@ VectorXd boxplus(VectorXd x, VectorXd dx)
     Vector3d dv(dx(3), dx(4), dx(5));
     Matrix3d dR = lie_algebra_2_rotation(dv);
     Quaterniond x_q(x(3), x(4), x(5), x(6));
+    x_q.normalize();
     Matrix3d x_R = x_q.toRotationMatrix();
     Matrix3d x_R_plus = x_R * dR;
     Quaterniond x_q_plus(x_R_plus);
-    x_q_plus.normalized();
+    x_q_plus.normalize();
     x_plus(3) = x_q_plus.w();
     x_plus(4) = x_q_plus.x();
     x_plus(5) = x_q_plus.y();
@@ -1671,29 +1743,24 @@ VectorXd upate_state_Quaterniond_F_model(VectorXd X_state, Vector3d gyro, Vector
 {
     // IMU is in FLU frame
     // Transform IMU frame into "world" frame whose original point is FLU's original point and the XOY plain is parallel with the ground and z axis is up
-    VectorXd f(VectorXd::Zero(stateSize));
-
     VectorXd upate_X_state(VectorXd::Zero(stateSize));
 
-    Vector3d p, v, bg, ba;
-    Quaterniond q;
-    getState(p, q, v, bg, ba);
+    const Vector3d v = X_state.segment<3>(7);
+    const Vector3d bg = X_state.segment<3>(10);
+    const Vector3d ba = X_state.segment<3>(13);
+    Quaterniond q(X_state(3), X_state(4), X_state(5), X_state(6));
+    q.normalize();
+    const Vector3d unbiased_gyro = gyro - bg - ng;
+    const Vector3d world_acc = gravity + q * (acc - ba - na);
 
-    f.segment<3>(0) = v;                          // 0,1,2
-    f.segment<3>(4) = q * (gyro - bg - ng) * 0.5; // 4,5,6
-    f.segment<3>(7) = gravity + q * (acc - ba - na);
-    f.segment<3>(10) = nbg;
-    f.segment<3>(13) = nba;
+    upate_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * world_acc * dt * dt;
 
-    upate_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * (gravity + q * (acc - ba - na)) * dt * dt;
-
-    Quaterniond delta_q(1.0, 0.5 * (gyro(0) - bg(0) - ng(0)) * dt, 0.5 * (gyro(1) - bg(1) - ng(1)) * dt, 0.5 * (gyro(2) - bg(2) - ng(2)) * dt);
-    Quaterniond upate_q = (q * delta_q).normalized();
+    Quaterniond upate_q = (q * delta_quaternion_from_gyro(unbiased_gyro, dt)).normalized();
     upate_X_state(3) = upate_q.w();
     upate_X_state(4) = upate_q.x();
     upate_X_state(5) = upate_q.y();
     upate_X_state(6) = upate_q.z();
-    upate_X_state.segment<3>(7) = X_state.segment<3>(7) + (gravity + q * (acc - ba - na)) * dt;
+    upate_X_state.segment<3>(7) = X_state.segment<3>(7) + world_acc * dt;
     upate_X_state.segment<3>(10) = X_state.segment<3>(10) + nbg * dt;
     upate_X_state.segment<3>(13) = X_state.segment<3>(13) + nba * dt;
     return upate_X_state;
@@ -1730,6 +1797,7 @@ MatrixXd diff_f_diff_x(Quaterniond q_last, Vector3d gyro, Vector3d acc, Vector3d
    
     MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(errorstateSize, errorstateSize));
     diff_f_diff_x_jacobian.block<3, 3>(0, 6) = Eigen::Matrix3d::Identity(); // dp/dv
+	    diff_f_diff_x_jacobian.block<3, 3>(3, 3) = -hat(gyro - bg_last);       // d(dtheta)/d(theta)  missing term fixed
     diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -Eigen::Matrix3d::Identity();
     diff_f_diff_x_jacobian.block<3, 3>(6, 3) = -q_last.toRotationMatrix() * hat(acc - ba_last); //!!!!
     diff_f_diff_x_jacobian.block<3, 3>(6, 12) = -q_last.toRotationMatrix();

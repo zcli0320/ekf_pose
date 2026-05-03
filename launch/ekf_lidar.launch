@@ -4,6 +4,16 @@
     <arg name="odom_fallback_topic" default="/unused_odom_fallback"/>
     <arg name="gnss_topic" default="/mavros/global_position/global"/>
     <arg name="use_gnss" default="true"/>
+    <arg name="gyro_cov" default="0.05"/>
+    <arg name="acc_cov" default="0.20"/>
+    <arg name="position_cov" default="0.005"/>
+    <arg name="q_rp_cov" default="0.01"/>
+    <arg name="q_yaw_cov" default="0.01"/>
+    <arg name="cutoff_freq" default="8.0"/>
+    <arg name="gnss_min_interval" default="1.0"/>
+    <arg name="gnss_min_cov_xy" default="100.0"/>
+    <arg name="gnss_min_cov_z" default="144.0"/>
+    <arg name="gnss_cov_scale" default="1.0"/>
     
     <node pkg="ekf" type="ekf" name="ekf" output="screen">
         <remap from="~imu" to="$(arg imu_topic)"/>
@@ -29,25 +39,25 @@
 
         <!-- Qt -->
         <!-- kdkdkd -->
-        <param name="gyro_cov" type="double" value="0.05"/> 
-        <param name="acc_cov" type="double" value="0.20"/>
+        <param name="gyro_cov" type="double" value="$(arg gyro_cov)"/> 
+        <param name="acc_cov" type="double" value="$(arg acc_cov)"/>
         <!-- Rt -->
-        <param name="position_cov" type="double" value="0.01"/>
-        <param name="q_rp_cov" type="double" value="0.01"/>
-        <param name="q_yaw_cov" type="double" value="0.01"/>
-        <param name="cutoff_freq" type="double" value="0.0"/>
-        <param name="publish_warmup_frames" type="int" value="0"/>
+        <param name="position_cov" type="double" value="$(arg position_cov)"/>
+        <param name="q_rp_cov" type="double" value="$(arg q_rp_cov)"/>
+        <param name="q_yaw_cov" type="double" value="$(arg q_yaw_cov)"/>
+        <param name="cutoff_freq" type="double" value="$(arg cutoff_freq)"/>
+        <param name="publish_warmup_frames" type="int" value="30"/>
         <param name="odom_jump_threshold" type="double" value="2.0"/>
         <param name="odom_reset_threshold" type="double" value="6.0"/>
-        <param name="innovation_reject_threshold" type="double" value="1.0"/>
+        <param name="innovation_reject_threshold" type="double" value="1.5"/>
         <param name="innovation_reset_threshold" type="double" value="2.0"/>
         <param name="odom_source_switch_grace" type="double" value="0.5"/>
         <param name="use_gnss" type="bool" value="$(arg use_gnss)"/>
         <param name="gnss_use_msg_covariance" type="bool" value="true"/>
-        <param name="gnss_min_interval" type="double" value="1.0"/>
-        <param name="gnss_min_cov_xy" type="double" value="100.0"/>
-        <param name="gnss_min_cov_z" type="double" value="144.0"/>
-        <param name="gnss_cov_scale" type="double" value="1.0"/>
+        <param name="gnss_min_interval" type="double" value="$(arg gnss_min_interval)"/>
+        <param name="gnss_min_cov_xy" type="double" value="$(arg gnss_min_cov_xy)"/>
+        <param name="gnss_min_cov_z" type="double" value="$(arg gnss_min_cov_z)"/>
+        <param name="gnss_cov_scale" type="double" value="$(arg gnss_cov_scale)"/>
         <param name="gnss_innovation_gate" type="double" value="15.0"/>
         <param name="gnss_min_status" type="int" value="0"/>
         <param name="reject_reinit_limit" type="int" value="0"/>

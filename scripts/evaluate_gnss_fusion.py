@@ -112,30 +112,71 @@ class FusionEvaluator:
             ekf = list(self.ekf)
             odom = list(self.odom)
             gnss = list(self.gnss)
+        metrics = self.compute_metrics(ekf, odom, gnss)
         self.ekf = ekf
         self.odom = odom
         self.gnss = gnss
 
+        print("samples: ekf={} odom={} gnss={}".format(metrics["ekf_count"], metrics["odom_count"], metrics["gnss_count"]))
+        print(self.format_line("ekf_vs_odom", metrics["ekf_vs_odom"]))
+        print(self.format_line("ekf_vs_aligned_gnss", metrics["ekf_vs_aligned_gnss"]))
+        print("ekf_step: max={:.4f}m p95={:.4f}m".format(metrics["ekf_step_max"], metrics["ekf_step_p95"]))
+
+    def reset(self):
+        with self.lock:
+            self.ekf = []
+            self.odom = []
+            self.gnss = []
+            self.gnss_origin = None
+            self.gnss_alignment = None
+
+    def snapshot_metrics(self):
+        with self.lock:
+            ekf = list(self.ekf)
+            odom = list(self.odom)
+            gnss = list(self.gnss)
+        return self.compute_metrics(ekf, odom, gnss)
+
+    @staticmethod
+    def summarize(values):
+        if not values:
+            return {"count": 0, "mean": float("nan"), "p95": float("nan"), "max": float("nan")}
+        return {
+            "count": len(values),
+            "mean": sum(values) / len(values),
+            "p95": FusionEvaluator.percentile(values, 0.95),
+            "max": max(values),
+        }
+
+    @staticmethod
+    def format_line(name, stats):
+        if stats["count"] == 0:
+            return "{}: count=0".format(name)
+        return "{}: count={} mean={:.4f}m p95={:.4f}m max={:.4f}m".format(
+            name,
+            stats["count"],
+            stats["mean"],
+            stats["p95"],
+            stats["max"],
+        )
+
+    def compute_metrics(self, ekf, odom, gnss):
+        self.ekf = ekf
+        self.odom = odom
+        self.gnss = gnss
         odom_errors = self.paired_error(odom, ekf)
         gnss_aligned = self.aligned_gnss()
         gnss_errors = self.paired_error(gnss_aligned, ekf, max_dt=0.10)
         max_step, p95_step = self.step_stats(ekf)
-
-        def line(name, values):
-            if not values:
-                return "{}: count=0".format(name)
-            return "{}: count={} mean={:.4f}m p95={:.4f}m max={:.4f}m".format(
-                name,
-                len(values),
-                sum(values) / len(values),
-                self.percentile(values, 0.95),
-                max(values),
-            )
-
-        print("samples: ekf={} odom={} gnss={}".format(len(ekf), len(odom), len(gnss)))
-        print(line("ekf_vs_odom", odom_errors))
-        print(line("ekf_vs_aligned_gnss", gnss_errors))
-        print("ekf_step: max={:.4f}m p95={:.4f}m".format(max_step, p95_step))
+        return {
+            "ekf_count": len(ekf),
+            "odom_count": len(odom),
+            "gnss_count": len(gnss),
+            "ekf_vs_odom": self.summarize(odom_errors),
+            "ekf_vs_aligned_gnss": self.summarize(gnss_errors),
+            "ekf_step_max": max_step,
+            "ekf_step_p95": p95_step,
+        }
 
 
 if __name__ == "__main__":
