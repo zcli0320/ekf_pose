@@ -7,6 +7,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall")
 
 find_package(catkin REQUIRED COMPONENTS
     roscpp
+    rospy
     std_msgs
     nav_msgs
     geometry_msgs
@@ -33,3 +34,8 @@ add_executable(imu_add_noise_quat src/imu_add_noise.cpp src/conversion.cpp)
 target_link_libraries(ekf ${catkin_LIBRARIES} )
 target_link_libraries(imu_add_noise_quat ${catkin_LIBRARIES} )
 
+catkin_install_python(PROGRAMS
+    scripts/mun_frl_topic_bridge.py
+    scripts/vo_gnss_imu_guidance.py
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

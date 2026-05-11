@@ -1,0 +1,36 @@
+<launch>
+    <arg name="imu_in" default="/imu/data"/>
+    <arg name="fix_in" default="/fix"/>
+    <!-- Set this to a VINS-Fusion/FAST-LIO2 odometry topic, e.g. /vins_estimator/odometry or /Odometry. -->
+    <arg name="odom_in" default=""/>
+
+    <arg name="imu_out" default="/mavros/imu/data"/>
+    <arg name="fix_out" default="/mavros/global_position/global"/>
+    <arg name="odom_out" default="/mavros/odometry/in"/>
+
+    <arg name="imu_frame_id" default="imu_link"/>
+    <arg name="gnss_frame_id" default="gps_link"/>
+    <arg name="odom_frame_id" default="map"/>
+    <arg name="odom_child_frame_id" default="base_link"/>
+
+    <!-- MUN-FRL quarry1 /fix already carries this covariance: XY 0.4356 m^2, Z 1.7424 m^2. -->
+    <arg name="override_gnss_covariance" default="false"/>
+    <arg name="gnss_cov_xy" default="0.4356"/>
+    <arg name="gnss_cov_z" default="1.7424"/>
+
+    <node pkg="ekf" type="mun_frl_topic_bridge.py" name="mun_frl_topic_bridge" output="screen">
+        <param name="imu_in" value="$(arg imu_in)"/>
+        <param name="fix_in" value="$(arg fix_in)"/>
+        <param name="odom_in" value="$(arg odom_in)"/>
+        <param name="imu_out" value="$(arg imu_out)"/>
+        <param name="fix_out" value="$(arg fix_out)"/>
+        <param name="odom_out" value="$(arg odom_out)"/>
+        <param name="imu_frame_id" value="$(arg imu_frame_id)"/>
+        <param name="gnss_frame_id" value="$(arg gnss_frame_id)"/>
+        <param name="odom_frame_id" value="$(arg odom_frame_id)"/>
+        <param name="odom_child_frame_id" value="$(arg odom_child_frame_id)"/>
+        <param name="override_gnss_covariance" value="$(arg override_gnss_covariance)"/>
+        <param name="gnss_cov_xy" value="$(arg gnss_cov_xy)"/>
+        <param name="gnss_cov_z" value="$(arg gnss_cov_z)"/>
+    </node>
+</launch>

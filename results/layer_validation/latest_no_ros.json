@@ -1,0 +1,386 @@
+{
+  "checks": [
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "p_norm": 0.0,
+        "v_norm": 0.0
+      },
+      "name": "predict stationary zero input",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "px": 0.5,
+        "vx": 1.0000000000000007
+      },
+      "name": "predict constant acceleration",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "angle_error_rad": 0.0
+      },
+      "name": "predict constant angular velocity one turn",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "trace_end": 15.099999999999998,
+        "trace_start": 15.01
+      },
+      "name": "covariance predict monotonic",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "dt": 0.75,
+        "p_norm": 0.0
+      },
+      "name": "large dt remains finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "p": 0.003322259136212626,
+        "x": 1.9933554817275747
+      },
+      "name": "odom position update convergence",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "odom attitude quaternion residual",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "pos": [
+          0.5,
+          1.0,
+          1.5
+        ],
+        "vel": [
+          3.0,
+          -2.0,
+          1.0
+        ]
+      },
+      "name": "GNSS update only touches position block",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "max_speed": 1.004987562112089
+      },
+      "name": "GNSS velocity pseudo observation bounded",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "position Jacobian finite difference",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "nis": 0.05000000000000001
+      },
+      "name": "GNSS NIS normal remains in gate",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "GNSS adaptive scale on jump",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "states": [
+          "HEALTHY",
+          "HEALTHY",
+          "ISOLATED",
+          "ISOLATED",
+          "RECOVERING",
+          "RECOVERING",
+          "HEALTHY",
+          "HEALTHY"
+        ]
+      },
+      "name": "GNSS NIS state recovers without oscillation",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "scales": [
+          1.0,
+          1.0,
+          20.8,
+          100.0
+        ]
+      },
+      "name": "odom health decreases with drift residual",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "enu": [
+          3.0000000013819257,
+          5.000000000596018,
+          2.0
+        ]
+      },
+      "name": "GNSS ENU construction",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "max_residual": 0.0,
+        "yaw": 0.6108652381980153
+      },
+      "name": "odom/GNSS yaw translation alignment",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "alignment residual decreases",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "low dynamic alignment does not falsely trigger",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "WAIT",
+          "GNSS_COLD",
+          "FULL",
+          "GNSS_FAULT",
+          "IMU_ODOM",
+          "FULL"
+        ]
+      },
+      "name": "T1 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "WAIT",
+          "IMU_ODOM",
+          "FULL",
+          "ODOM_LOST",
+          "DEAD_RECK",
+          "IMU_ODOM"
+        ]
+      },
+      "name": "T2 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "FULL",
+          "GNSS_WEAK",
+          "GNSS_FAULT",
+          "GNSS_FAULT",
+          "IMU_ODOM",
+          "FULL"
+        ]
+      },
+      "name": "T3 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "FULL",
+          "RECOVERY",
+          "FULL"
+        ]
+      },
+      "name": "T4 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "illegal": [
+          [
+            "WAIT",
+            "FULL"
+          ],
+          [
+            "GNSS_FAULT",
+            "FULL"
+          ],
+          [
+            "DEAD_RECK",
+            "GNSS_FAULT"
+          ],
+          [
+            "RECOVERY",
+            "DEAD_RECK"
+          ]
+        ]
+      },
+      "name": "illegal transitions blocked by contract",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "accepted": [
+          "IMU_ODOM",
+          "FULL",
+          "GNSS_WEAK",
+          "GNSS_FAULT",
+          "DEAD_RECK",
+          "GNSS_COLD",
+          "FULL"
+        ]
+      },
+      "name": "random traversal never enters undefined state",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "states": [
+          "HEALTHY",
+          "HEALTHY",
+          "HEALTHY",
+          "DEGRADED",
+          "DEGRADED",
+          "DEGRADED",
+          "ISOLATED",
+          "ISOLATED",
+          "RECOVERING",
+          "RECOVERING",
+          "HEALTHY",
+          "HEALTHY"
+        ]
+      },
+      "name": "GNSS health sub-state degrades isolates recovers",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "odom boundary frequency 1Hz finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "odom boundary frequency 200Hz finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "very low GNSS interval has finite velocity",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "R scale lower and upper bounds finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "out-of-order timestamp rejected",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {
+        "trace": 21.000000000000068
+      },
+      "name": "long no-observation covariance grows",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "90deg frame alignment converges",
+      "passed": true
+    }
+  ],
+  "created_at": "2026-05-08_08-38-12",
+  "repo": "/home/zcl/catkin_ws/src/ekf",
+  "run_ros": false,
+  "summary": {
+    "Layer0": {
+      "failed": 0,
+      "passed": 18,
+      "total": 18
+    },
+    "Layer2": {
+      "failed": 0,
+      "passed": 7,
+      "total": 7
+    },
+    "Layer3": {
+      "failed": 0,
+      "passed": 7,
+      "total": 7
+    }
+  }
+}

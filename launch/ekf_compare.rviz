@@ -1,0 +1,205 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Grid1
+        - /Input Odom Path1
+        - /EKF IMU Odom Path1
+        - /EKF Three Source Path1
+        - /Three Source GNSS Path1
+        - /Three Source Measurement Path1
+      Splitter Ratio: 0.5
+    Tree Height: 900
+  - Class: rviz/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.25
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 80
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 0.8
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 80; 80
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.035
+      Name: Input Odom Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 80; 80
+      Pose Style: None
+      Topic: /ekf_three_source/filter/input_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 80; 170; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.065
+      Name: EKF IMU Odom Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 80; 170; 255
+      Pose Style: None
+      Topic: /ekf_imu_odom/filter/ekf_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 80; 255; 120
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.075
+      Name: EKF Three Source Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 80; 255; 120
+      Pose Style: None
+      Topic: /ekf_three_source/filter/ekf_path
+      Unreliable: false
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /ekf_three_source/filter/ekf_segments
+      Name: Three Source Reset Segments
+      Namespaces:
+        ekf_segments: true
+      Queue Size: 100
+      Unreliable: false
+      Value: true
+    - Alpha: 0.9
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 220; 70
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.055
+      Name: Three Source GNSS Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 220; 70
+      Pose Style: None
+      Topic: /ekf_three_source/filter/gnss_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.75
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 210; 130; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.04
+      Name: Three Source Measurement Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 210; 130; 255
+      Pose Style: None
+      Topic: /ekf_three_source/filter/measurement_path
+      Unreliable: false
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Enabled: true
+      Keep: 120
+      Name: Three Source Current Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 0.45
+        Axes Radius: 0.03
+        Color: 80; 255; 120
+        Value: Axes
+      Topic: /ekf_three_source/filter/ekf_odom
+      Unreliable: false
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Enabled: false
+      Keep: 120
+      Name: IMU Odom Current Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 0.4
+        Axes Radius: 0.025
+        Color: 80; 170; 255
+        Value: Axes
+      Topic: /ekf_imu_odom/filter/ekf_odom
+      Unreliable: false
+      Value: false
+  Enabled: true
+  Global Options:
+    Background Color: 38; 38; 38
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 35
+      Enable Stereo Rendering:
+        Value: false
+      Field of View: 0.7853981852531433
+      Focal Point:
+        X: 2
+        Y: -4
+        Z: -13
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.75
+      Target Frame: <Fixed Frame>
+      Yaw: 4.2
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1100
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Views:
+    collapsed: false
+  Width: 1760
+  X: 80
+  Y: 60

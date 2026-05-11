@@ -1,0 +1,916 @@
+{
+  "checks": [
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "p_norm": 0.0,
+        "v_norm": 0.0
+      },
+      "name": "predict stationary zero input",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "px": 0.5,
+        "vx": 1.0000000000000007
+      },
+      "name": "predict constant acceleration",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "angle_error_rad": 0.0
+      },
+      "name": "predict constant angular velocity one turn",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "trace_end": 15.099999999999998,
+        "trace_start": 15.01
+      },
+      "name": "covariance predict monotonic",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "dt": 0.75,
+        "p_norm": 0.0
+      },
+      "name": "large dt remains finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "p": 0.003322259136212626,
+        "x": 1.9933554817275747
+      },
+      "name": "odom position update convergence",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "odom attitude quaternion residual",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "pos": [
+          0.5,
+          1.0,
+          1.5
+        ],
+        "vel": [
+          3.0,
+          -2.0,
+          1.0
+        ]
+      },
+      "name": "GNSS update only touches position block",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "max_speed": 1.004987562112089
+      },
+      "name": "GNSS velocity pseudo observation bounded",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "position Jacobian finite difference",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "nis": 0.05000000000000001
+      },
+      "name": "GNSS NIS normal remains in gate",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "GNSS adaptive scale on jump",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "states": [
+          "HEALTHY",
+          "HEALTHY",
+          "ISOLATED",
+          "ISOLATED",
+          "RECOVERING",
+          "RECOVERING",
+          "HEALTHY",
+          "HEALTHY"
+        ]
+      },
+      "name": "GNSS NIS state recovers without oscillation",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "scales": [
+          1.0,
+          1.0,
+          20.8,
+          100.0
+        ]
+      },
+      "name": "odom health decreases with drift residual",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "enu": [
+          3.0000000013819257,
+          5.000000000596018,
+          2.0
+        ]
+      },
+      "name": "GNSS ENU construction",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {
+        "max_residual": 0.0,
+        "yaw": 0.6108652381980153
+      },
+      "name": "odom/GNSS yaw translation alignment",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "alignment residual decreases",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer0",
+      "metrics": {},
+      "name": "low dynamic alignment does not falsely trigger",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "WAIT",
+          "GNSS_COLD",
+          "FULL",
+          "GNSS_FAULT",
+          "IMU_ODOM",
+          "FULL"
+        ]
+      },
+      "name": "T1 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "WAIT",
+          "IMU_ODOM",
+          "FULL",
+          "ODOM_LOST",
+          "DEAD_RECK",
+          "IMU_ODOM"
+        ]
+      },
+      "name": "T2 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "FULL",
+          "GNSS_WEAK",
+          "GNSS_FAULT",
+          "GNSS_FAULT",
+          "IMU_ODOM",
+          "FULL"
+        ]
+      },
+      "name": "T3 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "path": [
+          "FULL",
+          "RECOVERY",
+          "FULL"
+        ]
+      },
+      "name": "T4 legal transition path",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "illegal": [
+          [
+            "WAIT",
+            "FULL"
+          ],
+          [
+            "GNSS_FAULT",
+            "FULL"
+          ],
+          [
+            "DEAD_RECK",
+            "GNSS_FAULT"
+          ],
+          [
+            "RECOVERY",
+            "DEAD_RECK"
+          ]
+        ]
+      },
+      "name": "illegal transitions blocked by contract",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "accepted": [
+          "IMU_ODOM",
+          "FULL",
+          "GNSS_WEAK",
+          "GNSS_FAULT",
+          "DEAD_RECK",
+          "GNSS_COLD",
+          "FULL"
+        ]
+      },
+      "name": "random traversal never enters undefined state",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer2",
+      "metrics": {
+        "states": [
+          "HEALTHY",
+          "HEALTHY",
+          "HEALTHY",
+          "DEGRADED",
+          "DEGRADED",
+          "DEGRADED",
+          "ISOLATED",
+          "ISOLATED",
+          "RECOVERING",
+          "RECOVERING",
+          "HEALTHY",
+          "HEALTHY"
+        ]
+      },
+      "name": "GNSS health sub-state degrades isolates recovers",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "odom boundary frequency 1Hz finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "odom boundary frequency 200Hz finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "very low GNSS interval has finite velocity",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "R scale lower and upper bounds finite",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "out-of-order timestamp rejected",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {
+        "trace": 21.000000000000068
+      },
+      "name": "long no-observation covariance grows",
+      "passed": true
+    },
+    {
+      "detail": "",
+      "layer": "Layer3",
+      "metrics": {},
+      "name": "90deg frame alignment converges",
+      "passed": true
+    },
+    {
+      "detail": "best=no_gnss output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/all_gps_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "no_gnss",
+        "ekf_count": 1207,
+        "ekf_step_max": 1.666407563172739,
+        "ekf_step_p95": 0.14346382638018998,
+        "ekf_vs_aligned_gnss": {
+          "count": 1207,
+          "max": 2.7082596718422285,
+          "mean": 1.0127534575752244,
+          "p95": 1.4243058440725507
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_odom": {
+          "count": 1207,
+          "max": 2.2876989277212196,
+          "mean": 0.2374633049441893,
+          "p95": 0.8222953063634434
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 1207,
+          "max": 2.1514298984823284,
+          "mean": 0.23564721825237558,
+          "p95": 0.7700868359368958
+        },
+        "elapsed_s": 62.24527645111084,
+        "gnss_cold_start_count": 0,
+        "gnss_count": 1302,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": 0.002938471011323634,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 0,
+        "odom_count": 824,
+        "odom_lost_count": 0,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 2,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 1.163557612131452
+      },
+      "name": "S2/S6 healthy full fusion",
+      "passed": false
+    },
+    {
+      "detail": "best=no_gnss output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/all_gps_no_gnss_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "no_gnss",
+        "ekf_count": 1305,
+        "ekf_step_max": 1.4838934414159461,
+        "ekf_step_p95": 0.04372492400709622,
+        "ekf_vs_aligned_gnss": {
+          "count": 1305,
+          "max": 1.1844928145063989,
+          "mean": 0.45045580646886635,
+          "p95": 0.5383075025033738
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_odom": {
+          "count": 1305,
+          "max": 1.3603930738060088,
+          "mean": 0.11196706796313739,
+          "p95": 0.6169167384005474
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 1305,
+          "max": 1.2538454642221974,
+          "mean": 0.13744260765146077,
+          "p95": 0.5522812737150675
+        },
+        "elapsed_s": 32.171104192733765,
+        "gnss_cold_start_count": 0,
+        "gnss_count": 1302,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -0.013311477218619083,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 0,
+        "odom_count": 824,
+        "odom_lost_count": 0,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.8320776462043691
+      },
+      "name": "S7 IMU+odom no GNSS",
+      "passed": true
+    },
+    {
+      "detail": "best=imu_gnss_degraded output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/kari_imu_gnss_degraded_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "imu_gnss_degraded",
+        "ekf_count": 8310,
+        "ekf_step_max": 3.721202662099329,
+        "ekf_step_p95": 0.024493753701085773,
+        "ekf_vs_aligned_gnss": {
+          "count": 8310,
+          "max": 3.1511830917309007,
+          "mean": 0.06854218585786877,
+          "p95": 0.20561009913543493
+        },
+        "ekf_vs_ground_truth": {
+          "count": 8310,
+          "max": 3.0167164998048306,
+          "mean": 0.18622509135271803,
+          "p95": 0.4792912261828233
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 2581,
+          "max": 0.5887365982750773,
+          "mean": 0.04881551604575379,
+          "p95": 0.2113142472800278
+        },
+        "ekf_vs_odom": {
+          "count": 3001,
+          "max": 0.5456570398483168,
+          "mean": 0.08772678883819028,
+          "p95": 0.3521898244067813
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 8310,
+          "max": 3.129216843758637,
+          "mean": 0.048544505419909324,
+          "p95": 0.2016786548425001
+        },
+        "elapsed_s": 112.8088481426239,
+        "gnss_cold_start_count": 0,
+        "gnss_count": 8308,
+        "gnss_ground_truth_yaw_rad": -0.1234195793688257,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -0.1896806366618792,
+        "gnss_velocity_update_count": 50,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 8308,
+          "max": 0.38900690680632466,
+          "mean": 0.12076118875094612,
+          "p95": 0.3862202488703309
+        },
+        "ground_truth_count": 8308,
+        "node_gnss_path_count": 262,
+        "odom_count": 1800,
+        "odom_lost_count": 101,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 1800,
+          "max": 0.1761642091395608,
+          "mean": 0.10081646269333482,
+          "p95": 0.15322736347817953
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.5730540687095271
+      },
+      "name": "S8 odom lost IMU+GNSS degraded",
+      "passed": true
+    },
+    {
+      "detail": "best=imu_gnss_cold_start output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/kari_gnss_cold_start_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "imu_gnss_cold_start",
+        "ekf_count": 8310,
+        "ekf_step_max": 4.32636751425248,
+        "ekf_step_p95": 0.022361700220226856,
+        "ekf_vs_aligned_gnss": {
+          "count": 8310,
+          "max": 3.7775647595773463,
+          "mean": 0.014051937055325073,
+          "p95": 0.021399055763121448
+        },
+        "ekf_vs_ground_truth": {
+          "count": 8310,
+          "max": 5.666018547771985,
+          "mean": 2.720643929885936,
+          "p95": 2.799225207527244
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 2581,
+          "max": 0.1858161949199135,
+          "mean": 0.021804705330511178,
+          "p95": 0.05438881640811298
+        },
+        "ekf_vs_odom": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 8310,
+          "max": 3.7732346936360863,
+          "mean": 0.015628664064376515,
+          "p95": 0.022279969998861494
+        },
+        "elapsed_s": 115.15377950668335,
+        "gnss_cold_start_count": 1,
+        "gnss_count": 8308,
+        "gnss_ground_truth_yaw_rad": -0.1234195793688257,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -0.005180058643317129,
+        "gnss_velocity_update_count": 79,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 8308,
+          "max": 0.38900690680632466,
+          "mean": 0.12076118875094612,
+          "p95": 0.3862202488703309
+        },
+        "ground_truth_count": 8308,
+        "node_gnss_path_count": 262,
+        "odom_count": 0,
+        "odom_lost_count": 158,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 2.8104060576373575
+      },
+      "name": "S3 GNSS cold start",
+      "passed": true
+    },
+    {
+      "detail": "best=gnss_adaptive_nis_window output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/kari_gnss_jump_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "gnss_adaptive_nis_window",
+        "ekf_count": 8307,
+        "ekf_step_max": 5.410652027036535,
+        "ekf_step_p95": 0.024362682114838212,
+        "ekf_vs_aligned_gnss": {
+          "count": 8307,
+          "max": 25.354573361218264,
+          "mean": 2.8725753597450496,
+          "p95": 24.998718292637495
+        },
+        "ekf_vs_ground_truth": {
+          "count": 8307,
+          "max": 4.643994242384126,
+          "mean": 0.1763611251390648,
+          "p95": 0.47662246886807513
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 2281,
+          "max": 0.31353167343263694,
+          "mean": 0.0409474849132746,
+          "p95": 0.14001430693177178
+        },
+        "ekf_vs_odom": {
+          "count": 8307,
+          "max": 4.787546086526329,
+          "mean": 0.03869581356792893,
+          "p95": 0.1321985975785174
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 8307,
+          "max": 22.632370157784564,
+          "mean": 5.0076128668195015,
+          "p95": 21.97279071864593
+        },
+        "elapsed_s": 113.0736734867096,
+        "gnss_cold_start_count": 0,
+        "gnss_count": 8308,
+        "gnss_ground_truth_yaw_rad": 2.004920513227194,
+        "gnss_motion_inconsistent_count": 19,
+        "gnss_nis_isolated_count": 1,
+        "gnss_nis_monitor_count": 1,
+        "gnss_reject_count": 20,
+        "gnss_rigid_yaw_rad": 1.6695008283669772,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 1,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 8308,
+          "max": 22.701652039207588,
+          "mean": 5.014348700394658,
+          "p95": 22.028536470546634
+        },
+        "ground_truth_count": 8308,
+        "node_gnss_path_count": 231,
+        "odom_count": 4985,
+        "odom_lost_count": 1,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 4985,
+          "max": 0.481927861521685,
+          "mean": 0.17556997670086505,
+          "p95": 0.4767815843140226
+        },
+        "odom_weak_count": 1,
+        "recovery_time_s": 0.007923126220703125,
+        "reset_count": 0,
+        "score": 0.4888038099254942
+      },
+      "name": "S9/S11 GNSS jump rejected",
+      "passed": true
+    },
+    {
+      "detail": "best=gnss_drift_correction output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/kari_odom_drift_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "gnss_drift_correction",
+        "ekf_count": 4811,
+        "ekf_step_max": 282.81829656395337,
+        "ekf_step_p95": 0.13044233587566825,
+        "ekf_vs_aligned_gnss": {
+          "count": 4811,
+          "max": 285.8881518730524,
+          "mean": 0.5450470100201306,
+          "p95": 1.2881496733877462
+        },
+        "ekf_vs_ground_truth": {
+          "count": 4811,
+          "max": 285.7440790543101,
+          "mean": 0.5359865737893189,
+          "p95": 1.2075069913892666
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 1449,
+          "max": 39.60085138908121,
+          "mean": 0.3954229390143625,
+          "p95": 0.9787687214187486
+        },
+        "ekf_vs_odom": {
+          "count": 4811,
+          "max": 285.9173947816185,
+          "mean": 0.8519469950418315,
+          "p95": 1.3742261239408682
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 4811,
+          "max": 285.82179921038846,
+          "mean": 0.5322160795397415,
+          "p95": 1.1855381443587067
+        },
+        "elapsed_s": 105.57507681846619,
+        "gnss_cold_start_count": 0,
+        "gnss_count": 8308,
+        "gnss_ground_truth_yaw_rad": -0.1234195793688257,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 7,
+        "gnss_nis_monitor_count": 39,
+        "gnss_reject_count": 15,
+        "gnss_rigid_yaw_rad": 0.021083403366694793,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 39,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 8308,
+          "max": 0.38900690680632466,
+          "mean": 0.12076118875094612,
+          "p95": 0.3862202488703309
+        },
+        "ground_truth_count": 8308,
+        "node_gnss_path_count": 147,
+        "odom_count": 4985,
+        "odom_lost_count": 1,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 4985,
+          "max": 2.1792183839012313,
+          "mean": 1.1365450118462619,
+          "p95": 2.08198677377784
+        },
+        "odom_weak_count": 50,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 1.2727281593271007
+      },
+      "name": "S15 odom drift reweighted",
+      "passed": true
+    },
+    {
+      "detail": "best=gnss_conservative output=/home/zcl/catkin_ws/src/ekf/results/layer_validation/new_data_realign_layer1.json",
+      "layer": "Layer1",
+      "metrics": {
+        "best_trial": "gnss_conservative",
+        "ekf_count": 6870,
+        "ekf_step_max": 0.28643748635108807,
+        "ekf_step_p95": 0.025173940376239348,
+        "ekf_vs_aligned_gnss": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 146,
+          "max": 19.375470800635377,
+          "mean": 8.558181066567215,
+          "p95": 19.290998246856542
+        },
+        "ekf_vs_odom": {
+          "count": 6843,
+          "max": 0.4292936588870355,
+          "mean": 0.03882165651865087,
+          "p95": 0.17639539393406597
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "elapsed_s": 148.58372712135315,
+        "gnss_cold_start_count": 1,
+        "gnss_count": 0,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 86,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 41,
+        "gnss_reject_count": 86,
+        "gnss_rigid_yaw_rad": null,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 41,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 15,
+        "odom_count": 4105,
+        "odom_lost_count": 0,
+        "odom_realign_count": 4,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 30,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.18898236412218564
+      },
+      "name": "S14 local odom relocalization handled",
+      "passed": true
+    }
+  ],
+  "created_at": "2026-05-08_08-23-59",
+  "repo": "/home/zcl/catkin_ws/src/ekf",
+  "run_ros": true,
+  "summary": {
+    "Layer0": {
+      "failed": 0,
+      "passed": 18,
+      "total": 18
+    },
+    "Layer1": {
+      "failed": 1,
+      "passed": 6,
+      "total": 7
+    },
+    "Layer2": {
+      "failed": 0,
+      "passed": 7,
+      "total": 7
+    },
+    "Layer3": {
+      "failed": 0,
+      "passed": 7,
+      "total": 7
+    }
+  }
+}

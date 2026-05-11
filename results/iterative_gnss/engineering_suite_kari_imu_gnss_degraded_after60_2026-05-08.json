@@ -1,0 +1,104 @@
+{
+  "bag": "/home/zcl/datasets/KARI_drone_vertical_takeoff_and_landing_navigation/kari_imu_gnss_degraded_after60_gt.bag",
+  "best": "imu_gnss_degraded",
+  "evaluator_topics": {
+    "aligned_gnss_path": "/ekf/gnss_path",
+    "ekf": "/ekf/ekf_odom",
+    "gnss": "/mavros/global_position/global",
+    "ground_truth": "/ground_truth/odom",
+    "odom": "/mavros/odometry/in"
+  },
+  "extra_launch_args": [],
+  "extra_play_args": [
+    "-r",
+    "3.0"
+  ],
+  "results": [
+    {
+      "metrics": {
+        "ekf_count": 8310,
+        "ekf_step_max": 4.319730187583726,
+        "ekf_step_p95": 0.024361562233898997,
+        "ekf_vs_aligned_gnss": {
+          "count": 8310,
+          "max": 3.7781515068351372,
+          "mean": 0.07281661722229003,
+          "p95": 0.20803206209082717
+        },
+        "ekf_vs_ground_truth": {
+          "count": 8310,
+          "max": 3.6399259173363387,
+          "mean": 0.1906841995476948,
+          "p95": 0.4794138596106805
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 2581,
+          "max": 0.5920642591819322,
+          "mean": 0.04907036987621534,
+          "p95": 0.21223563737747211
+        },
+        "ekf_vs_odom": {
+          "count": 3001,
+          "max": 0.5360444683796862,
+          "mean": 0.08794227140046786,
+          "p95": 0.35257482816591507
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 8310,
+          "max": 3.7537578203967077,
+          "mean": 0.05549826495300917,
+          "p95": 0.20367295563467563
+        },
+        "gnss_cold_start_count": 0,
+        "gnss_count": 8308,
+        "gnss_ground_truth_yaw_rad": -0.1234195793688257,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -0.1939188844398035,
+        "gnss_velocity_update_count": 50,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 8308,
+          "max": 0.38900690680632466,
+          "mean": 0.12076118875094612,
+          "p95": 0.3862202488703309
+        },
+        "ground_truth_count": 8308,
+        "node_gnss_path_count": 262,
+        "odom_count": 1800,
+        "odom_lost_count": 101,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 1800,
+          "max": 0.1761642091395608,
+          "mean": 0.10081646269333482,
+          "p95": 0.15322736347817953
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.5731412647607552
+      },
+      "trial": {
+        "enable_gnss_velocity_when_odom_lost": "true",
+        "gnss_alignment_max_residual": "2.0",
+        "gnss_alignment_max_samples": "30",
+        "gnss_alignment_min_motion": "0.01",
+        "gnss_alignment_min_samples": "3",
+        "gnss_cov_scale": "0.25",
+        "gnss_healthy_odom_weak_scale": "0.1",
+        "gnss_min_cov_xy": "0.25",
+        "gnss_min_cov_z": "1.0",
+        "gnss_min_interval": "0.2",
+        "gnss_velocity_cov": "1.0",
+        "name": "imu_gnss_degraded",
+        "odom_loss_timeout": "1.0",
+        "position_cov": "0.10",
+        "use_gnss": "true"
+      }
+    }
+  ]
+}

@@ -6,10 +6,13 @@ Panels:
       Expanded:
         - /Global Options1
         - /Grid1
-        - /Input Path1
+        - /SLAM Odom Path1
+        - /IMU GNSS Odom Fusion Path1
         - /EKF Segments1
+        - /EKF Historical Arrows1
+        - /EKF Current Odom1
         - /GNSS Path1
-        - /Measurement Path1
+        - /Actual Observation Path1
       Splitter Ratio: 0.5
     Tree Height: 900
   - Class: rviz/Selection
@@ -52,7 +55,7 @@ Visualization Manager:
       Plane Cell Count: 80
       Reference Frame: <Fixed Frame>
       Value: true
-    - Alpha: 0.85
+    - Alpha: 0.9
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 90; 90
@@ -61,8 +64,8 @@ Visualization Manager:
       Head Length: 0.12
       Length: 0.18
       Line Style: Lines
-      Line Width: 0.028
-      Name: Input Path
+      Line Width: 0.032
+      Name: SLAM Odom Path
       Offset:
         X: 0
         Y: 0
@@ -78,13 +81,113 @@ Visualization Manager:
     - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /ekf/ekf_segments
-      Name: EKF Segments
+      Name: Fusion Reset Segments
       Namespaces:
         ekf_segments: true
       Queue Size: 100
       Unreliable: false
       Value: true
-    - Alpha: 0.75
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 80; 255; 120
+      Enabled: true
+      Head Diameter: 0.08
+      Head Length: 0.14
+      Length: 0.2
+      Line Style: Lines
+      Line Width: 0.075
+      Name: IMU GNSS Odom Fusion Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 80; 255; 120
+      Pose Style: None
+      Radius: 0.018
+      Shaft Diameter: 0.02
+      Shaft Length: 0.1
+      Topic: /ekf/ekf_path
+      Unreliable: false
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: false
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: false
+        Value: false
+      Enabled: false
+      Keep: 120
+      Name: EKF Current Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 0.4
+        Axes Radius: 0.03
+        Color: 80; 255; 120
+        Head Length: 0.1
+        Head Radius: 0.05
+        Shaft Length: 0.3
+        Shaft Radius: 0.02
+        Value: Axes
+      Topic: /ekf/ekf_odom
+      Unreliable: false
+      Value: false
+    - Class: rviz/MarkerArray
+      Enabled: false
+      Marker Topic: /ekf/ekf_arrows
+      Name: Fusion Historical Arrows
+      Namespaces:
+        ekf_pose_arrows: true
+      Queue Size: 100
+      Unreliable: false
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: false
+      Position:
+        Alpha: 0.30000001192092896
+        Color: 255; 120; 220
+        Scale: 1
+        Value: false
+      Value: false
+      Enabled: false
+      Keep: 300
+      Name: Guided VO Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 0.35
+        Axes Radius: 0.025
+        Color: 255; 120; 220
+        Head Length: 0.1
+        Head Radius: 0.045
+        Shaft Length: 0.25
+        Shaft Radius: 0.018
+        Value: Axes
+      Topic: /ekf/guided_vo_odom
+      Unreliable: false
+      Value: false
+    - Alpha: 0.9
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 220; 70
@@ -93,7 +196,7 @@ Visualization Manager:
       Head Length: 0.11
       Length: 0.16
       Line Style: Lines
-      Line Width: 0.024
+      Line Width: 0.06
       Name: GNSS Path
       Offset:
         X: 0
@@ -116,8 +219,8 @@ Visualization Manager:
       Head Length: 0.11
       Length: 0.16
       Line Style: Lines
-      Line Width: 0.024
-      Name: Measurement Path
+      Line Width: 0.05
+      Name: Actual Observation Path
       Offset:
         X: 0
         Y: 0

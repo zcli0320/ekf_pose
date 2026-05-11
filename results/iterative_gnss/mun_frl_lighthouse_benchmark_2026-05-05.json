@@ -1,0 +1,401 @@
+{
+  "bag": "/home/zcl/datasets/mun_frl/lighthouse_benchmark/lighthouse_project_topics.bag",
+  "best": "no_gnss",
+  "evaluator_topics": {
+    "aligned_gnss_path": "/ekf/gnss_path",
+    "ekf": "/ekf/ekf_odom",
+    "gnss": "/mavros/global_position/global",
+    "ground_truth": "/ground_truth/odom",
+    "odom": "/mavros/odometry/in"
+  },
+  "extra_launch_args": [],
+  "extra_play_args": [
+    "-r",
+    "3.0"
+  ],
+  "results": [
+    {
+      "metrics": {
+        "ekf_count": 69324,
+        "ekf_step_max": 0.1896997435573163,
+        "ekf_step_p95": 0.008962358147103909,
+        "ekf_vs_aligned_gnss": {
+          "count": 68034,
+          "max": 260.36381922591596,
+          "mean": 115.07360508578591,
+          "p95": 256.32368548755335
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_odom": {
+          "count": 54987,
+          "max": 0.7452199664435083,
+          "mean": 0.09082705810031146,
+          "p95": 0.2380991886614893
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 68034,
+          "max": 22.73533721091829,
+          "mean": 9.986405965696317,
+          "p95": 22.42189836243428
+        },
+        "gnss_count": 869,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -2.7335934166462392,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 0,
+        "odom_count": 1719,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.24258036773504124
+      },
+      "trial": {
+        "name": "no_gnss",
+        "use_gnss": "false"
+      }
+    },
+    {
+      "metrics": {
+        "ekf_count": 64843,
+        "ekf_step_max": 0.20146191845522443,
+        "ekf_step_p95": 0.00908655663573753,
+        "ekf_vs_aligned_gnss": {
+          "count": 63642,
+          "max": 258.3140684667613,
+          "mean": 105.37182682240034,
+          "p95": 253.1317397369632
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 3514,
+          "max": 44.039150864670546,
+          "mean": 27.86704409498223,
+          "p95": 40.87269763349817
+        },
+        "ekf_vs_odom": {
+          "count": 51475,
+          "max": 0.7398090097573831,
+          "mean": 0.09028013680308575,
+          "p95": 0.24317578699168974
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 63642,
+          "max": 22.126651705707303,
+          "mean": 10.024427484503072,
+          "p95": 21.935260143778766
+        },
+        "gnss_count": 869,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 1,
+        "gnss_nis_monitor_count": 128,
+        "gnss_reject_count": 1,
+        "gnss_rigid_yaw_rad": -2.7123736776540848,
+        "gnss_weak_count": 128,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 44,
+        "odom_count": 1719,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.2477190653095585
+      },
+      "trial": {
+        "gnss_min_cov_xy": "100.0",
+        "gnss_min_cov_z": "144.0",
+        "gnss_min_interval": "1.0",
+        "name": "gnss_very_conservative",
+        "use_gnss": "true"
+      }
+    },
+    {
+      "metrics": {
+        "ekf_count": 69324,
+        "ekf_step_max": 0.19002644289944545,
+        "ekf_step_p95": 0.008970594670710506,
+        "ekf_vs_aligned_gnss": {
+          "count": 68034,
+          "max": 260.36482039717583,
+          "mean": 115.07363499577748,
+          "p95": 256.32406109334573
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 3439,
+          "max": 50.090957625504,
+          "mean": 28.040987376720647,
+          "p95": 44.02069464057552
+        },
+        "ekf_vs_odom": {
+          "count": 54987,
+          "max": 0.7442907326192848,
+          "mean": 0.09082380345073782,
+          "p95": 0.23811092231176467
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 68034,
+          "max": 22.73535216472915,
+          "mean": 9.98637756348827,
+          "p95": 22.421404826086576
+        },
+        "gnss_count": 869,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 17,
+        "gnss_nis_monitor_count": 121,
+        "gnss_reject_count": 17,
+        "gnss_rigid_yaw_rad": -2.733594686815531,
+        "gnss_weak_count": 121,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 43,
+        "odom_count": 1719,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.24259621964711992
+      },
+      "trial": {
+        "gnss_min_cov_xy": "64.0",
+        "gnss_min_cov_z": "100.0",
+        "gnss_min_interval": "1.0",
+        "name": "gnss_conservative",
+        "use_gnss": "true"
+      }
+    },
+    {
+      "metrics": {
+        "ekf_count": 69324,
+        "ekf_step_max": 0.2015784021757544,
+        "ekf_step_p95": 0.008971927357136098,
+        "ekf_vs_aligned_gnss": {
+          "count": 68034,
+          "max": 260.3644626484352,
+          "mean": 115.07414360684653,
+          "p95": 256.3235955236236
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 3199,
+          "max": 40.87593722398082,
+          "mean": 26.564004701145976,
+          "p95": 40.17637426457804
+        },
+        "ekf_vs_odom": {
+          "count": 54987,
+          "max": 0.7405698133124885,
+          "mean": 0.09073597230837586,
+          "p95": 0.23817782162749396
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 68034,
+          "max": 22.735491535677415,
+          "mean": 9.986376357656038,
+          "p95": 22.421971361585754
+        },
+        "gnss_count": 869,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 12,
+        "gnss_nis_isolated_count": 26,
+        "gnss_nis_monitor_count": 110,
+        "gnss_reject_count": 38,
+        "gnss_rigid_yaw_rad": -2.733594547390984,
+        "gnss_weak_count": 111,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 40,
+        "odom_count": 1719,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.242663785306062
+      },
+      "trial": {
+        "enable_gnss_mahalanobis_gate": "true",
+        "enable_gnss_motion_consistency": "true",
+        "gnss_alignment_max_samples": "30",
+        "gnss_alignment_min_motion": "1.0",
+        "gnss_alignment_min_samples": "5",
+        "gnss_min_cov_xy": "64.0",
+        "gnss_min_cov_z": "100.0",
+        "gnss_min_interval": "1.0",
+        "gnss_motion_consistency_reject_threshold": "3.0",
+        "gnss_motion_consistency_threshold": "1.0",
+        "name": "gnss_health_gate",
+        "use_gnss": "true"
+      }
+    },
+    {
+      "metrics": {
+        "ekf_count": 65241,
+        "ekf_step_max": 0.19013957111230703,
+        "ekf_step_p95": 0.009069903337852743,
+        "ekf_vs_aligned_gnss": {
+          "count": 64034,
+          "max": 259.253701323888,
+          "mean": 106.310409649464,
+          "p95": 254.08612028857667
+        },
+        "ekf_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 4798,
+          "max": 73.97999474706168,
+          "mean": 36.42643270398666,
+          "p95": 65.20922580462994
+        },
+        "ekf_vs_odom": {
+          "count": 51772,
+          "max": 0.7472251355571161,
+          "mean": 0.09003639274756274,
+          "p95": 0.24291586317181374
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 64034,
+          "max": 22.180566351153278,
+          "mean": 10.012334251477672,
+          "p95": 21.974326548038363
+        },
+        "gnss_count": 869,
+        "gnss_ground_truth_yaw_rad": null,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 107,
+        "gnss_nis_monitor_count": 88,
+        "gnss_reject_count": 107,
+        "gnss_rigid_yaw_rad": -2.7137952657253854,
+        "gnss_weak_count": 88,
+        "gnss_yaw_alignment_count": 1,
+        "gps_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "ground_truth_count": 0,
+        "node_gnss_path_count": 60,
+        "odom_count": 1719,
+        "odom_realign_count": 0,
+        "odom_vs_ground_truth": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "p95": null
+        },
+        "odom_weak_count": 0,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 0.2474508148407401
+      },
+      "trial": {
+        "enable_gnss_health_score": "true",
+        "enable_gnss_mahalanobis_gate": "true",
+        "enable_gnss_motion_consistency": "true",
+        "enable_gnss_nis_state_machine": "true",
+        "gnss_alignment_max_samples": "40",
+        "gnss_alignment_min_motion": "2.0",
+        "gnss_alignment_min_samples": "12",
+        "gnss_degraded_count_threshold": "3",
+        "gnss_health_window_size": "5",
+        "gnss_isolation_time": "1.0",
+        "gnss_min_cov_xy": "0.04",
+        "gnss_min_cov_z": "0.09",
+        "gnss_min_interval": "0.2",
+        "gnss_r_degraded_scale": "5.0",
+        "gnss_r_severe_scale": "20.0",
+        "gnss_recover_count_threshold": "3",
+        "gnss_severe_count_threshold": "3",
+        "name": "gnss_adaptive_nis_window",
+        "use_gnss": "true"
+      }
+    }
+  ]
+}
