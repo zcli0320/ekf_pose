@@ -339,9 +339,9 @@ def score(metrics):
     return value
 
 
-def run_trial(bag_path, trial, evaluator, extra_launch_args, extra_play_args):
+def run_trial(bag_path, trial, evaluator, extra_launch_args, extra_play_args, launch_file):
     evaluator.reset()
-    launch_args = ["roslaunch", "ekf", "ekf_lidar.launch", "start_rviz:=false"]
+    launch_args = ["roslaunch", "ekf", launch_file, "start_rviz:=false"]
     for key, value in trial.items():
         if key == "name":
             continue
@@ -375,6 +375,10 @@ def run_trial(bag_path, trial, evaluator, extra_launch_args, extra_play_args):
     metrics["gnss_velocity_update_count"] = launch_output.count("GNSS velocity pseudo-update active")
     metrics["gnss_cold_start_count"] = launch_output.count("GNSS cold start initialized EKF")
     metrics["gnss_yaw_alignment_count"] = launch_output.count("Initialized GNSS yaw alignment")
+    metrics["vio_ready_count"] = launch_output.count("VIO guidance ready")
+    metrics["vio_waiting_count"] = launch_output.count("VIO guidance waiting")
+    metrics["vio_lost_count"] = launch_output.count("vio_lost")
+    metrics["vio_reset_detected_count"] = launch_output.count("vio_reset_detected")
     metrics["score"] = score(metrics)
     return metrics
 
@@ -388,6 +392,8 @@ def main():
     parser.add_argument("--gnss-topic", default="/mavros/global_position/global", help="GNSS topic used by evaluator")
     parser.add_argument("--ground-truth-topic", default="/ground_truth/odom", help="Ground truth odometry topic used by evaluator")
     parser.add_argument("--aligned-gnss-path-topic", default="/ekf/gnss_path", help="Aligned GNSS path topic published by EKF node")
+    parser.add_argument("--launch-file", default="ekf_lidar.launch", help="Launch file in the ekf package to benchmark")
+    parser.add_argument("--single-trial-name", default=None, help="Run one launch-default trial with this name")
     parser.add_argument("--anomaly-end-time", type=float, default=-1.0, help="Bag-relative anomaly end time for recovery metric")
     parser.add_argument("--recovery-error-threshold", type=float, default=0.5, help="Error threshold in meters for recovery metric")
     parser.add_argument("--recovery-hold-samples", type=int, default=5, help="Consecutive samples required for recovery metric")
@@ -416,7 +422,9 @@ def main():
 
         results = []
         selected_trials = DEFAULT_TRIALS
-        if args.trial_name:
+        if args.single_trial_name:
+            selected_trials = [{"name": args.single_trial_name}]
+        elif args.trial_name:
             selected = set(args.trial_name)
             selected_trials = [trial for trial in DEFAULT_TRIALS if trial["name"] in selected]
             if not selected_trials:
@@ -424,7 +432,7 @@ def main():
 
         for trial in selected_trials:
             print("running {}".format(trial["name"]))
-            metrics = run_trial(args.bag, trial, evaluator, args.launch_arg, args.play_arg)
+            metrics = run_trial(args.bag, trial, evaluator, args.launch_arg, args.play_arg, args.launch_file)
             result = {"trial": trial, "metrics": serialize_metrics(metrics)}
             results.append(result)
             print(json.dumps(result, indent=2, sort_keys=True))
@@ -442,6 +450,7 @@ def main():
             },
             "extra_launch_args": args.launch_arg,
             "extra_play_args": args.play_arg,
+            "launch_file": args.launch_file,
             "results": results,
         }
         output_dir = os.path.dirname(os.path.abspath(args.output))

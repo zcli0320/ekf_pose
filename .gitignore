@@ -10,3 +10,34 @@ install/
 logs/
 *.pyc
 __pycache__/
+
+# Local ROS/runtime state
+.ros/
+*.log
+
+# Editors and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Large local datasets and generated archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Thesis/private writing artifacts
+thesis/
+thesis_bags/
+*.doc
+*.docx
+*.ppt
+*.pptx
+
+# Generated benchmark artifacts. Keep curated Markdown/CSV summaries when needed.
+results/**/*.json
+results/**/*.pdf
+results/**/*.png

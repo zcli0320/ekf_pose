@@ -11,6 +11,7 @@ Panels:
         - /EKF Segments1
         - /EKF Historical Arrows1
         - /EKF Current Odom1
+        - /Guided VIO Odom1
         - /GNSS Path1
         - /Actual Observation Path1
       Splitter Ratio: 0.5
@@ -187,6 +188,40 @@ Visualization Manager:
       Topic: /ekf/guided_vo_odom
       Unreliable: false
       Value: false
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: false
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 120; 220; 255
+          Scale: 1
+          Value: false
+        Value: false
+      Enabled: true
+      Keep: 300
+      Name: Guided VIO Odom
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 0.35
+        Axes Radius: 0.025
+        Color: 120; 220; 255
+        Head Length: 0.1
+        Head Radius: 0.045
+        Shaft Length: 0.25
+        Shaft Radius: 0.018
+        Value: Axes
+      Topic: /ekf/guided_vio_odom
+      Unreliable: false
+      Value: true
     - Alpha: 0.9
       Buffer Length: 1
       Class: rviz/Path

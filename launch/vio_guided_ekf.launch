@@ -1,0 +1,95 @@
+<launch>
+    <arg name="raw_vio_topic" default="/mavros/odometry/in"/>
+    <arg name="imu_topic" default="/mavros/imu/data"/>
+    <arg name="gnss_topic" default="/mavros/global_position/global"/>
+    <arg name="guided_odom_topic" default="/ekf/guided_vio_odom"/>
+    <arg name="status_topic" default="/ekf/vio_guidance_status"/>
+    <arg name="world_frame_id" default="map"/>
+    <arg name="child_frame_id" default="base_link"/>
+    <arg name="start_rviz" default="true"/>
+    <arg name="rviz_config" default="$(find ekf)/launch/vio_guided_minimal.rviz"/>
+    <arg name="use_sim_time" default="true"/>
+
+    <arg name="vio_guidance_min_speed" default="0.3"/>
+    <arg name="vio_guidance_min_motion" default="2.0"/>
+    <arg name="vio_guidance_min_pairs" default="5"/>
+    <arg name="vio_guidance_max_pairs" default="80"/>
+    <arg name="vio_guidance_max_pair_dt" default="0.08"/>
+    <arg name="vio_guidance_reference_sample_interval" default="0.2"/>
+    <arg name="vio_guidance_ready_frames" default="3"/>
+    <arg name="vio_guidance_recovery_frames" default="5"/>
+    <arg name="vio_guidance_max_residual" default="1.0"/>
+    <arg name="vio_guidance_translation_only_max_residual" default="0.75"/>
+    <arg name="vio_guidance_max_scale_error" default="0.35"/>
+    <arg name="vio_guidance_yaw_stability" default="0.08"/>
+    <arg name="vio_guidance_translation_stability" default="0.5"/>
+    <arg name="vio_guidance_lost_timeout" default="1.0"/>
+    <arg name="vio_guidance_imu_timeout" default="0.5"/>
+    <arg name="vio_guidance_require_imu" default="true"/>
+    <arg name="vio_guidance_allow_translation_only" default="true"/>
+    <arg name="vio_guidance_allow_initial_translation_only" default="false"/>
+    <arg name="vio_guidance_translation_only_covariance_scale" default="25.0"/>
+    <arg name="vio_guidance_publish_before_ready" default="false"/>
+    <arg name="ekf_enable_odom_gnss_consistency_health" default="true"/>
+    <arg name="ekf_enable_gnss_motion_consistency" default="true"/>
+    <arg name="ekf_enable_gnss_velocity_when_odom_lost" default="false"/>
+    <arg name="ekf_enable_gnss_position_snap_when_odom_lost" default="false"/>
+    <arg name="ekf_enable_gnss_cold_start" default="true"/>
+    <arg name="ekf_gnss_cold_start_delay" default="8.0"/>
+    <arg name="ekf_gnss_update_only_when_odom_lost" default="false"/>
+    <arg name="ekf_gnss_min_interval" default="0.75"/>
+    <arg name="ekf_gnss_min_cov_xy" default="36.0"/>
+    <arg name="ekf_gnss_min_cov_z" default="64.0"/>
+
+    <node pkg="ekf" type="vio_gnss_imu_guidance.py" name="vio_gnss_imu_guidance" output="screen">
+        <param name="raw_vio_topic" value="$(arg raw_vio_topic)"/>
+        <param name="imu_topic" value="$(arg imu_topic)"/>
+        <param name="gnss_topic" value="$(arg gnss_topic)"/>
+        <param name="guided_odom_topic" value="$(arg guided_odom_topic)"/>
+        <param name="status_topic" value="$(arg status_topic)"/>
+        <param name="world_frame_id" value="$(arg world_frame_id)"/>
+        <param name="child_frame_id" value="$(arg child_frame_id)"/>
+        <param name="min_speed" value="$(arg vio_guidance_min_speed)"/>
+        <param name="min_motion" value="$(arg vio_guidance_min_motion)"/>
+        <param name="min_pairs" value="$(arg vio_guidance_min_pairs)"/>
+        <param name="max_pairs" value="$(arg vio_guidance_max_pairs)"/>
+        <param name="max_pair_dt" value="$(arg vio_guidance_max_pair_dt)"/>
+        <param name="reference_sample_interval" value="$(arg vio_guidance_reference_sample_interval)"/>
+        <param name="ready_frames" value="$(arg vio_guidance_ready_frames)"/>
+        <param name="recovery_frames" value="$(arg vio_guidance_recovery_frames)"/>
+        <param name="max_residual" value="$(arg vio_guidance_max_residual)"/>
+        <param name="translation_only_max_residual" value="$(arg vio_guidance_translation_only_max_residual)"/>
+        <param name="max_scale_error" value="$(arg vio_guidance_max_scale_error)"/>
+        <param name="yaw_stability" value="$(arg vio_guidance_yaw_stability)"/>
+        <param name="translation_stability" value="$(arg vio_guidance_translation_stability)"/>
+        <param name="lost_timeout" value="$(arg vio_guidance_lost_timeout)"/>
+        <param name="imu_timeout" value="$(arg vio_guidance_imu_timeout)"/>
+        <param name="require_imu" value="$(arg vio_guidance_require_imu)"/>
+        <param name="allow_translation_only" value="$(arg vio_guidance_allow_translation_only)"/>
+        <param name="allow_initial_translation_only" value="$(arg vio_guidance_allow_initial_translation_only)"/>
+        <param name="translation_only_covariance_scale" value="$(arg vio_guidance_translation_only_covariance_scale)"/>
+        <param name="publish_before_ready" value="$(arg vio_guidance_publish_before_ready)"/>
+    </node>
+
+    <include file="$(find ekf)/launch/ekf_lidar.launch">
+        <arg name="imu_topic" value="$(arg imu_topic)"/>
+        <arg name="odom_primary_topic" value="$(arg guided_odom_topic)"/>
+        <arg name="gnss_topic" value="$(arg gnss_topic)"/>
+        <arg name="enable_gnss_cold_start" value="$(arg ekf_enable_gnss_cold_start)"/>
+        <arg name="gnss_cold_start_delay" value="$(arg ekf_gnss_cold_start_delay)"/>
+        <arg name="gnss_update_only_when_odom_lost" value="$(arg ekf_gnss_update_only_when_odom_lost)"/>
+        <arg name="enable_gnss_position_snap_when_odom_lost" value="$(arg ekf_enable_gnss_position_snap_when_odom_lost)"/>
+        <arg name="gnss_min_interval" value="$(arg ekf_gnss_min_interval)"/>
+        <arg name="gnss_min_cov_xy" value="$(arg ekf_gnss_min_cov_xy)"/>
+        <arg name="gnss_min_cov_z" value="$(arg ekf_gnss_min_cov_z)"/>
+        <arg name="odom_use_msg_covariance" value="true"/>
+        <arg name="odom_msg_min_position_cov" value="0.01"/>
+        <arg name="odom_msg_min_orientation_cov" value="0.01"/>
+        <arg name="enable_gnss_velocity_when_odom_lost" value="$(arg ekf_enable_gnss_velocity_when_odom_lost)"/>
+        <arg name="enable_odom_gnss_consistency_health" value="$(arg ekf_enable_odom_gnss_consistency_health)"/>
+        <arg name="enable_gnss_motion_consistency" value="$(arg ekf_enable_gnss_motion_consistency)"/>
+        <arg name="start_rviz" value="$(arg start_rviz)"/>
+        <arg name="rviz_config" value="$(arg rviz_config)"/>
+        <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    </include>
+</launch>

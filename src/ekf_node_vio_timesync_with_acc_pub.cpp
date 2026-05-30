@@ -86,6 +86,7 @@ MatrixXd StateCovariance_correct;    // sigma
 
 MatrixXd Qt;
 MatrixXd Rt;
+MatrixXd current_odom_Rt;
 Vector3d u_gyro;
 Vector3d u_acc;
 Vector3d gravity(0., 0., -9.8); // need to estimate the bias 9.8099
@@ -132,6 +133,9 @@ double odom_jump_threshold = 2.0;
 double odom_reset_threshold = 6.0;
 double innovation_reject_threshold = 1.0;
 double innovation_reset_threshold = 2.0;
+bool odom_use_msg_covariance = false;
+double odom_msg_min_position_cov = 0.01;
+double odom_msg_min_orientation_cov = 0.01;
 bool enable_odom_realign = true;
 bool enable_adaptive_observation_covariance = true;
 double odom_adaptive_threshold = 1.5;
@@ -150,6 +154,8 @@ double odom_source_switch_grace = 0.5;
 bool use_gnss = true;
 bool enable_gnss_cold_start = true;
 double gnss_cold_start_delay = 1.0;
+bool gnss_update_only_when_odom_lost = false;
+bool enable_gnss_position_snap_when_odom_lost = false;
 bool gnss_use_msg_covariance = true;
 double gnss_min_interval = 0.5;
 double gnss_min_cov_xy = 4.0;
@@ -1260,6 +1266,41 @@ bool should_use_odom_source(const nav_msgs::Odometry::ConstPtr &msg,
     return false;
 }
 
+MatrixXd odom_measurement_covariance_from_msg(const nav_msgs::Odometry::ConstPtr &msg)
+{
+    MatrixXd R = Rt;
+    if (!odom_use_msg_covariance)
+    {
+        return R;
+    }
+
+    const boost::array<double, 36> &cov = msg->pose.covariance;
+    const int indices[6] = {0, 7, 14, 21, 28, 35};
+    bool has_covariance = false;
+    for (int i = 0; i < 6; ++i)
+    {
+        const double value = cov[indices[i]];
+        if (std::isfinite(value) && value > 1.0e-12)
+        {
+            has_covariance = true;
+            break;
+        }
+    }
+    if (!has_covariance)
+    {
+        return R;
+    }
+
+    R.setZero();
+    R(0, 0) = std::max(odom_msg_min_position_cov, cov[0]);
+    R(1, 1) = std::max(odom_msg_min_position_cov, cov[7]);
+    R(2, 2) = std::max(odom_msg_min_position_cov, cov[14]);
+    R(3, 3) = std::max(odom_msg_min_orientation_cov, cov[21]);
+    R(4, 4) = std::max(odom_msg_min_orientation_cov, cov[28]);
+    R(5, 5) = std::max(odom_msg_min_orientation_cov, cov[35]);
+    return R;
+}
+
 void update_lastest_state()
 {
     MatrixXd Ct;
@@ -1290,7 +1331,7 @@ void update_lastest_state()
         // return;
     }
     const double odom_scale = odom_health_scale(pos_diff, time_odom_tag_now);
-    const MatrixXd R_odom = odom_scale * Wt * Rt * Wt.transpose();
+    const MatrixXd R_odom = odom_scale * Wt * current_odom_Rt * Wt.transpose();
     Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom).inverse();
 
 
@@ -1352,6 +1393,7 @@ Vector3d rotation_2_lie_algebra(Matrix3d R)
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 { // assume that the odom_tag from camera is sychronized with the imus and without delay. !!!
 
+    current_odom_Rt = odom_measurement_covariance_from_msg(msg);
     double buffertime_ms = (imu_front_time - msg->header.stamp).toSec() * 1000;
     if (buffertime_ms > 0)
     {
@@ -1713,7 +1755,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
             }
         }
         const double odom_scale = odom_health_scale(pos_diff, msg->header.stamp.toSec());
-        const MatrixXd R_odom_meas = odom_scale * Wt * Rt * Wt.transpose();
+        const MatrixXd R_odom_meas = odom_scale * Wt * current_odom_Rt * Wt.transpose();
         Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom_meas).inverse();
         consecutive_reject_count = 0;
 
@@ -2142,6 +2184,35 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     }
     symmetrize_covariance(StateCovariance);
 
+    if (gnss_update_only_when_odom_lost && !odom_lost && odom_ever_initialized)
+    {
+        if (last_accepted_gnss_position_initialized)
+        {
+            const double accepted_dt = stamp - last_accepted_gnss_position_time;
+            if (accepted_dt >= gnss_velocity_min_dt && accepted_dt <= gnss_velocity_max_dt)
+            {
+                last_accepted_gnss_velocity =
+                    (z_gnss - last_accepted_gnss_position) / accepted_dt;
+                last_accepted_gnss_velocity_initialized = true;
+            }
+        }
+        last_gnss_update_time = stamp;
+        last_gnss_health_score = 1.0;
+        last_accepted_gnss_position = z_gnss;
+        last_accepted_gnss_position_time = stamp;
+        last_accepted_gnss_position_initialized = true;
+        append_pose_to_path(gnss_path_msg,
+                            gnss_path_pub,
+                            world_frame_id,
+                            z_gnss,
+                            Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)),
+                            msg->header.stamp,
+                            gnss_path_counter);
+        ROS_INFO_THROTTLE(5.0,
+                          "GNSS fallback-only mode: keeping GNSS reference without Kalman update while odom is healthy");
+        return;
+    }
+
     const Matrix3d S_gate = H * StateCovariance * H.transpose() + R_base;
     const double gnss_mahalanobis = innovation.transpose() * S_gate.ldlt().solve(innovation);
     SensorHealthMonitor::Decision gnss_nis_decision{SensorHealthMonitor::HEALTHY, 1.0, false};
@@ -2499,7 +2570,7 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     {
         velocity_delta = dx.segment<3>(6);
     }
-    if (odom_lost)
+    if (odom_lost && enable_gnss_position_snap_when_odom_lost)
     {
         const Vector3d forced_position_delta = z_gnss - X_state.segment<3>(0);
         X_state.segment<3>(0) = z_gnss;
@@ -2667,6 +2738,9 @@ int main(int argc, char **argv)
     n.getParam("odom_reset_threshold", odom_reset_threshold);
     n.getParam("innovation_reject_threshold", innovation_reject_threshold);
     n.getParam("innovation_reset_threshold", innovation_reset_threshold);
+    n.getParam("odom_use_msg_covariance", odom_use_msg_covariance);
+    n.getParam("odom_msg_min_position_cov", odom_msg_min_position_cov);
+    n.getParam("odom_msg_min_orientation_cov", odom_msg_min_orientation_cov);
     n.getParam("enable_odom_realign", enable_odom_realign);
     n.getParam("enable_adaptive_observation_covariance", enable_adaptive_observation_covariance);
     n.getParam("odom_adaptive_threshold", odom_adaptive_threshold);
@@ -2686,6 +2760,8 @@ int main(int argc, char **argv)
     n.getParam("enable_gnss_cold_start", enable_gnss_cold_start);
     n.getParam("gnss_cold_start_delay", gnss_cold_start_delay);
     n.getParam("gnss_cold_start_frame_id", gnss_cold_start_frame_id);
+    n.getParam("gnss_update_only_when_odom_lost", gnss_update_only_when_odom_lost);
+    n.getParam("enable_gnss_position_snap_when_odom_lost", enable_gnss_position_snap_when_odom_lost);
     n.getParam("gnss_use_msg_covariance", gnss_use_msg_covariance);
     n.getParam("gnss_min_interval", gnss_min_interval);
     n.getParam("gnss_min_cov_xy", gnss_min_cov_xy);
@@ -3009,6 +3085,7 @@ void initsys()
     Rt.topLeftCorner(3, 3) = position_cov * Rt.topLeftCorner(3, 3);
     Rt.bottomRightCorner(3, 3) = q_rp_cov * Rt.bottomRightCorner(3, 3);
     Rt.bottomRightCorner(1, 1) = q_yaw_cov * Rt.bottomRightCorner(1, 1);
+    current_odom_Rt = Rt;
 }
 
 

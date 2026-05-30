@@ -7,6 +7,8 @@
     <arg name="enable_gnss_cold_start" default="true"/>
     <arg name="gnss_cold_start_delay" default="1.0"/>
     <arg name="gnss_cold_start_frame_id" default="odom"/>
+    <arg name="gnss_update_only_when_odom_lost" default="false"/>
+    <arg name="enable_gnss_position_snap_when_odom_lost" default="false"/>
     <arg name="gyro_cov" default="0.5"/>
     <arg name="acc_cov" default="1.0"/>
     <arg name="position_cov" default="0.005"/>
@@ -59,6 +61,9 @@
     <arg name="gnss_odom_sync_max_dt" default="0.2"/>
     <arg name="gnss_alignment_max_residual" default="1.0"/>
     <arg name="enable_odom_realign" default="true"/>
+    <arg name="odom_use_msg_covariance" default="false"/>
+    <arg name="odom_msg_min_position_cov" default="0.01"/>
+    <arg name="odom_msg_min_orientation_cov" default="0.01"/>
     <arg name="enable_adaptive_observation_covariance" default="true"/>
     <arg name="odom_loss_timeout" default="1.0"/>
     <arg name="enable_gnss_velocity_when_odom_lost" default="false"/>
@@ -66,7 +71,7 @@
     <arg name="gnss_velocity_max_dt" default="1.5"/>
     <arg name="gnss_velocity_cov" default="1.0"/>
     <arg name="start_rviz" default="true"/>
-    <arg name="rviz_config" default="$(find ekf)/launch/ekf.rviz"/>
+    <arg name="rviz_config" default="$(find ekf)/launch/ekf_lidar_minimal.rviz"/>
     <arg name="use_sim_time" default="true"/>
 
     <param name="/use_sim_time" type="bool" value="$(arg use_sim_time)"/>
@@ -107,6 +112,9 @@
         <param name="odom_reset_threshold" type="double" value="6.0"/>
         <param name="innovation_reject_threshold" type="double" value="1.5"/>
         <param name="innovation_reset_threshold" type="double" value="2.0"/>
+        <param name="odom_use_msg_covariance" type="bool" value="$(arg odom_use_msg_covariance)"/>
+        <param name="odom_msg_min_position_cov" type="double" value="$(arg odom_msg_min_position_cov)"/>
+        <param name="odom_msg_min_orientation_cov" type="double" value="$(arg odom_msg_min_orientation_cov)"/>
         <param name="enable_odom_realign" type="bool" value="$(arg enable_odom_realign)"/>
         <param name="enable_adaptive_observation_covariance" type="bool" value="$(arg enable_adaptive_observation_covariance)"/>
         <param name="odom_adaptive_threshold" type="double" value="1.5"/>
@@ -126,6 +134,8 @@
         <param name="enable_gnss_cold_start" type="bool" value="$(arg enable_gnss_cold_start)"/>
         <param name="gnss_cold_start_delay" type="double" value="$(arg gnss_cold_start_delay)"/>
         <param name="gnss_cold_start_frame_id" type="str" value="$(arg gnss_cold_start_frame_id)"/>
+        <param name="gnss_update_only_when_odom_lost" type="bool" value="$(arg gnss_update_only_when_odom_lost)"/>
+        <param name="enable_gnss_position_snap_when_odom_lost" type="bool" value="$(arg enable_gnss_position_snap_when_odom_lost)"/>
         <param name="gnss_use_msg_covariance" type="bool" value="true"/>
         <param name="gnss_min_interval" type="double" value="$(arg gnss_min_interval)"/>
         <param name="gnss_min_cov_xy" type="double" value="$(arg gnss_min_cov_xy)"/>

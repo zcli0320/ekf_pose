@@ -37,5 +37,6 @@ target_link_libraries(imu_add_noise_quat ${catkin_LIBRARIES} )
 catkin_install_python(PROGRAMS
     scripts/mun_frl_topic_bridge.py
     scripts/vo_gnss_imu_guidance.py
+    scripts/vio_gnss_imu_guidance.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

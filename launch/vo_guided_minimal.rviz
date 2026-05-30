@@ -1,0 +1,113 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.25
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 80
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 0.85
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 120; 220
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.045
+      Name: Guided VO Input Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 120; 220
+      Pose Style: None
+      Topic: /ekf/input_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 80; 255; 120
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.075
+      Name: EKF Fusion Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 80; 255; 120
+      Pose Style: None
+      Topic: /ekf/ekf_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.9
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 220; 70
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.055
+      Name: GNSS Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 220; 70
+      Pose Style: None
+      Topic: /ekf/gnss_path
+      Unreliable: false
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 35
+      Enable Stereo Rendering:
+        Value: false
+      Field of View: 0.7853981852531433
+      Focal Point:
+        X: 2
+        Y: -4
+        Z: -13
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.75
+      Target Frame: <Fixed Frame>
+      Yaw: 4.2
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1100
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Width: 1760
+  X: 80
+  Y: 60

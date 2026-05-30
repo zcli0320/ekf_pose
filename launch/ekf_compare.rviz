@@ -38,7 +38,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 80; 80
-      Enabled: true
+      Enabled: false
       Line Style: Lines
       Line Width: 0.035
       Name: Input Odom Path
@@ -50,7 +50,7 @@ Visualization Manager:
       Pose Style: None
       Topic: /ekf_three_source/filter/input_path
       Unreliable: false
-      Value: true
+      Value: false
     - Alpha: 0.95
       Buffer Length: 1
       Class: rviz/Path
@@ -86,14 +86,14 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/MarkerArray
-      Enabled: true
+      Enabled: false
       Marker Topic: /ekf_three_source/filter/ekf_segments
       Name: Three Source Reset Segments
       Namespaces:
         ekf_segments: true
       Queue Size: 100
       Unreliable: false
-      Value: true
+      Value: false
     - Alpha: 0.9
       Buffer Length: 1
       Class: rviz/Path
@@ -115,7 +115,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 210; 130; 255
-      Enabled: true
+      Enabled: false
       Line Style: Lines
       Line Width: 0.04
       Name: Three Source Measurement Path
@@ -127,10 +127,10 @@ Visualization Manager:
       Pose Style: None
       Topic: /ekf_three_source/filter/measurement_path
       Unreliable: false
-      Value: true
+      Value: false
     - Angle Tolerance: 0.10000000149011612
       Class: rviz/Odometry
-      Enabled: true
+      Enabled: false
       Keep: 120
       Name: Three Source Current Odom
       Position Tolerance: 0.10000000149011612
@@ -142,7 +142,7 @@ Visualization Manager:
         Value: Axes
       Topic: /ekf_three_source/filter/ekf_odom
       Unreliable: false
-      Value: true
+      Value: false
     - Angle Tolerance: 0.10000000149011612
       Class: rviz/Odometry
       Enabled: false
