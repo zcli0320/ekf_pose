@@ -109,7 +109,6 @@
         <param name="cutoff_freq" type="double" value="$(arg cutoff_freq)"/>
         <param name="publish_warmup_frames" type="int" value="0"/>
         <param name="odom_jump_threshold" type="double" value="2.0"/>
-        <param name="odom_reset_threshold" type="double" value="6.0"/>
         <param name="innovation_reject_threshold" type="double" value="1.5"/>
         <param name="innovation_reset_threshold" type="double" value="2.0"/>
         <param name="odom_use_msg_covariance" type="bool" value="$(arg odom_use_msg_covariance)"/>
@@ -143,7 +142,6 @@
         <param name="gnss_cov_scale" type="double" value="$(arg gnss_cov_scale)"/>
         <param name="gnss_position_covariance_floor_xy" type="double" value="$(arg gnss_position_covariance_floor_xy)"/>
         <param name="gnss_position_covariance_floor_z" type="double" value="$(arg gnss_position_covariance_floor_z)"/>
-        <param name="gnss_innovation_gate" type="double" value="15.0"/>
         <param name="enable_gnss_mahalanobis_gate" type="bool" value="$(arg enable_gnss_mahalanobis_gate)"/>
         <param name="gnss_mahalanobis_weak_threshold" type="double" value="$(arg gnss_mahalanobis_weak_threshold)"/>
         <param name="gnss_mahalanobis_reject_threshold" type="double" value="$(arg gnss_mahalanobis_reject_threshold)"/>
@@ -184,7 +182,6 @@
         <param name="gnss_odom_sync_max_dt" type="double" value="$(arg gnss_odom_sync_max_dt)"/>
         <param name="gnss_alignment_max_residual" type="double" value="$(arg gnss_alignment_max_residual)"/>
         <param name="gnss_min_status" type="int" value="0"/>
-        <param name="reject_reinit_limit" type="int" value="0"/>
         <param name="path_publish_stride" type="int" value="3"/>
         <param name="path_max_points" type="int" value="50000"/>
         <param name="arrow_publish_stride" type="int" value="30"/>

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.0.2)
 project(ekf)
 
 set(CMAKE_BUILD_TYPE "Release")
@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
     nav_msgs
     geometry_msgs
     sensor_msgs
+    visualization_msgs
     )
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -25,12 +26,8 @@ include_directories(
 catkin_package(
     )
 
-# add_executable(ekf src/ekf_node.cpp src/conversion.cpp)  # to time synchronization  #oldest one, Euler transform is pnp the world in cam transforms to imu in world
-# add_executable(ekf src/ekf_node_mocap.cpp src/conversion.cpp)  # Euler transform is rigidbody in world transforms to imu in world
-# add_executable(ekf src/ekf_node_vio.cpp src/conversion.cpp) # only use ekf_node_vio.cpp (ekf_node_mocap.cpp is just for mocap format, base on this one)
-# add_executable(ekf src/ekf_node_vio_timesync.cpp src/conversion.cpp)
 add_executable(ekf src/ekf_node_vio_timesync_with_acc_pub.cpp src/conversion.cpp)
-add_executable(imu_add_noise_quat src/imu_add_noise.cpp src/conversion.cpp)
+add_executable(imu_add_noise_quat src/imu_add_noise.cpp)
 target_link_libraries(ekf ${catkin_LIBRARIES} )
 target_link_libraries(imu_add_noise_quat ${catkin_LIBRARIES} )
 

@@ -4,19 +4,17 @@
 #include <ros/console.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
-#include <sensor_msgs/Range.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <Eigen/Eigen>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
-#include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <unsupported/Eigen/MatrixFunctions>
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <iostream>
 #include <limits>
 #include <string>
 // #include <geometry_msgs/Accel.h>
@@ -39,8 +37,8 @@ using namespace Eigen;
 */
 /*
    -pi ~ pi crossing problem:
-   1. the model prpagation: X_state should be limited to [-pi,pi] after predicting and updating
-   2. inovation crossing: (measurement - g(X_state)) should also be limited to [-pi,pi] when getting the inovation.
+   1. the model propagation: X_state should be limited to [-pi,pi] after predicting and updating
+   2. innovation crossing: (measurement - g(X_state)) should also be limited to [-pi,pi] when getting the innovation.
    z_measurement is normally in [-pi~pi]
 */
 
@@ -49,38 +47,31 @@ using namespace Eigen;
 // odom: pose px,py pz orientation qw qx qy qz
 // imu: acc: x y z gyro: wx wy wz
 
-#define TimeSync 1 // time synchronize or not
-#define RePub 0    // re publish the odom when repropagation
-
 #define POS_DIFF_THRESHOLD (0.8f)
 
 ros::Publisher odom_pub, ahead_odom_pub;
 ros::Publisher cam_odom_pub;
-ros::Publisher acc_filtered_pub;
 ros::Publisher input_path_pub, ekf_path_pub, measurement_path_pub;
 ros::Publisher ekf_segments_pub;
 ros::Publisher ekf_arrows_pub;
 ros::Publisher gnss_path_pub;
 ros::Time imu_back_time = ros::Time(0), imu_front_time = ros::Time(0);
 
-// state
-geometry_msgs::Pose pose;
-Vector3d position, orientation, velocity;
-
-// Now set up the relevant matrices
-// states X [p q pdot]  [px,py,pz, wx,wy,wz, vx,vy,vz]
-size_t stateSize;            // x = [p q pdot bg ba]
-size_t errorstateSize;       // x = [p q pdot bg ba]
-size_t stateSize_pqv;        // x = [p q pdot]
-size_t measurementSize;      // z = [p q]
-size_t inputSize;            // u = [w a]
-VectorXd X_state(stateSize); // x (in most literature)
-VectorXd u_input;
-VectorXd Z_measurement;              // z
-MatrixXd StateCovariance;            // sigma
-MatrixXd Kt_kalmanGain;              // Kt
-VectorXd X_state_correct(stateSize); // x (in most literature)
-MatrixXd StateCovariance_correct;    // sigma
+// EKF state layout:
+//   Nominal state X_state is 16D: [p(0:2), q_wxyz(3:6), v(7:9), bg(10:12), ba(13:15)].
+//   Error state dx is 15D: [dp(0:2), dtheta(3:5), dv(6:8), dbg(9:11), dba(12:14)].
+//   StateCovariance is the 15x15 covariance of dx, not the 16D quaternion state.
+//   IMU input u is 6D: [gyro(0:2), acc(3:5)] and Qt is the corresponding noise covariance.
+//   Odom pose residual is 6D: [position residual, SO(3) rotation-vector residual];
+//   Z_measurement stores the raw 7D [p, q_wxyz] measurement before the residual is formed.
+size_t stateSize;
+size_t errorstateSize;
+size_t measurementSize;
+size_t inputSize;
+VectorXd X_state;
+VectorXd Z_measurement;
+MatrixXd StateCovariance;
+MatrixXd Kt_kalmanGain;
 // MatrixXd Ct_stateToMeasurement;                  // Ct
 //  VectorXd innovation;                         // z - Hx
 
@@ -98,8 +89,6 @@ Vector3d nbg(0., 0., 0.);
 Vector3d nba(0., 0., 0.);
 Matrix3d rotation_imu;
 
-// Vector3d q_last;
-//! changed by wz
 Quaterniond q_last;
 Vector3d bg_last;
 Vector3d ba_last;
@@ -109,18 +98,15 @@ double imu_trans_y = 0.0;
 double imu_trans_z = 0.0;
 double gyro_cov = 0.01;
 double acc_cov = 0.01;
-// Rt visual odomtry covariance smaller believe measurement more
+// Rt odom covariance: smaller values make the filter trust odom more.
 double position_cov = 0.1;
 double q_rp_cov = 0.1;
 double q_yaw_cov = 0.1;
 double scale_g;
 double dt = 0.005; // second
-double t_last, t_now;
 bool first_frame_imu = true;
 bool first_frame_tag_odom = true;
 bool ekf_initialized = false;
-bool test_odomtag_call = false;
-bool odomtag_call = false;
 
 double time_now, time_last;
 double time_odom_tag_now;
@@ -130,7 +116,6 @@ double cutoff_freq = 20;
 double sample_freq = 120;
 int publish_warmup_frames = 0;
 double odom_jump_threshold = 2.0;
-double odom_reset_threshold = 6.0;
 double innovation_reject_threshold = 1.0;
 double innovation_reset_threshold = 2.0;
 bool odom_use_msg_covariance = false;
@@ -163,7 +148,6 @@ double gnss_min_cov_z = 9.0;
 double gnss_cov_scale = 1.0;
 double gnss_position_covariance_floor_xy = 0.0;
 double gnss_position_covariance_floor_z = 0.0;
-double gnss_innovation_gate = 15.0;
 bool enable_gnss_mahalanobis_gate = true;
 double gnss_mahalanobis_weak_threshold = 7.815;
 double gnss_mahalanobis_reject_threshold = 16.266;
@@ -204,7 +188,6 @@ double gnss_alignment_sample_interval = 0.5;
 double gnss_odom_sync_max_dt = 0.2;
 double gnss_alignment_max_residual = 1.0;
 int gnss_min_status = 0;
-int reject_reinit_limit = 10;
 int path_publish_stride = 5;
 int path_max_points = 2000;
 int arrow_publish_stride = 30;
@@ -220,10 +203,14 @@ Vector3d last_accepted_gnss_velocity = Vector3d::Zero();
 std::deque<nav_msgs::Odometry::ConstPtr> pending_odom_measurements;
 const size_t max_pending_odom_measurements = 200;
 
+/// @brief Forward declaration for odom-loss query used by IMU and GNSS paths.
 bool odom_is_lost_at(double stamp_sec);
+/// @brief Forward declaration for the odom processing pipeline.
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg);
+/// @brief Forward declaration for draining future-dated odom measurements.
 void drain_pending_odom_measurements();
 
+/// @brief Normalize the quaternion part of the nominal state X=[p,q,v,bg,ba].
 void normalize_state_quaternion(VectorXd &state)
 {
     Quaterniond q(state(3), state(4), state(5), state(6));
@@ -241,6 +228,7 @@ void normalize_state_quaternion(VectorXd &state)
     state(6) = q.z();
 }
 
+/// @brief Integrate an angular-rate sample into a small quaternion increment.
 Quaterniond delta_quaternion_from_gyro(const Vector3d &omega, double dt)
 {
     const Vector3d delta_theta = omega * dt;
@@ -252,11 +240,13 @@ Quaterniond delta_quaternion_from_gyro(const Vector3d &omega, double dt)
     return Quaterniond(AngleAxisd(angle, delta_theta / angle));
 }
 
+/// @brief Keep covariance numerically symmetric after EKF propagation or update.
 void symmetrize_covariance(MatrixXd &covariance)
 {
     covariance = 0.5 * (covariance + covariance.transpose());
 }
 
+/// @brief Apply Joseph-form covariance update for a 15D error-state EKF.
 void joseph_covariance_update(const MatrixXd &H, const MatrixXd &K, const MatrixXd &R)
 {
     const MatrixXd I = MatrixXd::Identity(errorstateSize, errorstateSize);
@@ -265,18 +255,18 @@ void joseph_covariance_update(const MatrixXd &H, const MatrixXd &K, const Matrix
     symmetrize_covariance(StateCovariance);
 }
 
-//zyh added
 double offset_px, offset_py, offset_pz;
-Eigen::Vector3d first_odom_get_;
 
-// world frame points velocity
+// Time-sync buffers store the nominal state/covariance before each IMU sample.
+// Odom updates roll back to the nearest buffered sample, update, then replay IMU.
 deque<pair<VectorXd, sensor_msgs::Imu>> sys_seq;
 deque<MatrixXd> cov_seq;
 double dt_0_rp; // the dt for the first frame in repropagation
+/// @brief Cache the pre-propagation state, IMU sample, and covariance for time-sync replay.
 void seq_keep(const sensor_msgs::Imu::ConstPtr &imu_msg)
 {
-#define seqsize 100
-    if (sys_seq.size() < seqsize)
+    static const size_t kMaxImuReplayBufferSize = 100;
+    if (sys_seq.size() < kMaxImuReplayBufferSize)
     {
         sys_seq.push_back(make_pair(X_state, *imu_msg)); // X_state before propagation and imu at that time
         cov_seq.push_back(StateCovariance);
@@ -293,6 +283,7 @@ void seq_keep(const sensor_msgs::Imu::ConstPtr &imu_msg)
     // ensure that the later frame time > the former one
 }
 // choose the coordinate frame imu for the measurement
+/// @brief Find the IMU buffer frame closest to an odom timestamp before an update.
 bool search_proper_frame(double odom_time)
 {
     if (sys_seq.size() == 0)
@@ -308,7 +299,7 @@ bool search_proper_frame(double odom_time)
 
     size_t rightframe = sys_seq.size() - 1;
     bool find_proper_frame = false;
-    for (size_t i = 1; i < sys_seq.size(); i++) // TODO: it better to search from the middle instead in the front
+    for (size_t i = 1; i < sys_seq.size(); i++)
     {
         double time_before = odom_time - sys_seq[i - 1].second.header.stamp.toSec();
         double time_after = odom_time - sys_seq[i].second.header.stamp.toSec();
@@ -368,6 +359,7 @@ bool search_proper_frame(double odom_time)
         return false;
     }
 }
+/// @brief Replay cached IMU samples after a delayed odom update to return to the latest time.
 void re_propagate()
 {
     for (size_t i = 1; i < sys_seq.size(); i++)
@@ -395,30 +387,23 @@ void re_propagate()
         q_last.y() = sys_seq[i].first(5);
         q_last.z() = sys_seq[i].first(6);
 
-        //! changed by wz
-        bg_last = sys_seq[i].first.segment<3>(10); // last X4
-        ba_last = sys_seq[i].first.segment<3>(13); // last X5
+        bg_last = sys_seq[i].first.segment<3>(10);
+        ba_last = sys_seq[i].first.segment<3>(13);
 
-        //! changed by wz
         Ft = MatrixXd::Identity(errorstateSize, errorstateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
 
         Vt = dt * diff_f_diff_n(q_last);
 
-        //! changed by wz
-        X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
+        X_state = propagate_nominal_state(X_state, u_gyro, u_acc, dt);
 
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
         symmetrize_covariance(StateCovariance);
-
-#if RePub
-        system_pub(X_state, sys_seq[i].second.header.stamp); // choose to publish the repropagation or not
-#endif
     }
 }
+/// @brief IMU callback: rotate/scale-correct raw IMU, propagate nominal state and covariance.
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    // wmywmy
-    // imu_time = msg->header.stamp;
+    // Apply static IMU axis rotation and gravity scale before propagation.
     sensor_msgs::Imu::Ptr new_msg(new sensor_msgs::Imu(*msg));
     Eigen::Vector3d temp1, temp2;
 
@@ -437,11 +422,7 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
     new_msg->angular_velocity.x = temp2[0];
     new_msg->angular_velocity.y = temp2[1];
     new_msg->angular_velocity.z = temp2[2];
-    // wmywmy
 
-    // seq_keep(msg);
-    // nav_msgs::Odometry odom_fusion;
-    // your code for propagation
     if (!first_frame_tag_odom)
     { // get the initial pose and orientation in the first frame of measurement
         if (first_frame_imu)
@@ -449,9 +430,7 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             first_frame_imu = false;
             time_now = new_msg->header.stamp.toSec();
             time_last = time_now;
-#if TimeSync
             seq_keep(new_msg); // keep before propagation
-#endif
 
             if (ekf_initialized) {
                 system_pub(X_state, new_msg->header.stamp);
@@ -460,10 +439,8 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
         }
         else
         {
-#if TimeSync
             seq_keep(new_msg); // keep before propagation
-#endif
-            // cout << "\033[1;32m[ INFO] [IMU] [TimeSync] [seq_keep] [OK] \033[0m" << endl;
+            // cout << "\033[1;32m[ INFO] [IMU] [time-sync] [seq_keep] [OK] \033[0m" << endl;
             time_now = new_msg->header.stamp.toSec();
             dt = time_now - time_last;
             if (dt <= 0.0)
@@ -479,17 +456,6 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
                 sample_freq = 1.0 / dt;
             }
 
-            if (odomtag_call)
-            {
-                odomtag_call = false;
-                // diff_time = time_now - time_odom_tag_now;
-                // if(diff_time<0)
-                // {
-                //     cout << "diff time: " << diff_time << endl;  //???!!! exist !!!???
-                //     cout << "timeimu: " << time_now - 1.60889e9 << " time_odom: " << time_odom_tag_now - 1.60889e9 << endl;
-                //     // cout << "diff time: " << diff_time << endl;  //about 30ms
-                // }
-            }
             MatrixXd Ft;
             MatrixXd Vt;
 
@@ -500,34 +466,21 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             u_acc(1) = new_msg->linear_acceleration.y;
             u_acc(2) = new_msg->linear_acceleration.z;
 
-            //! changed by wz
             q_last.w() = X_state(3);
             q_last.x() = X_state(4);
             q_last.y() = X_state(5);
             q_last.z() = X_state(6);
-            // cout << "q_last" << endl
-            //      << q_last << endl;
 
-            bg_last = X_state.segment<3>(10); // last X4
-            // cout << "bg_last" << endl
-            //  << bg_last << endl;
+            bg_last = X_state.segment<3>(10);
+            ba_last = X_state.segment<3>(13);
 
-            ba_last = X_state.segment<3>(13); // last X5
-
-            // cout << "ba_last" << endl
-            //  << ba_last << endl;
-            //! changed by wz
-            // cout << "dt:" << dt << endl;
             Ft = MatrixXd::Identity(errorstateSize, errorstateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
-
-            // cout << "Ft" << endl
-            //      << Ft << endl;
 
             Vt = dt * diff_f_diff_n(q_last);
             const bool odom_lost_for_prediction =
                 odom_is_lost_at(time_now) && last_accepted_gnss_velocity_initialized;
             const Vector3d position_before_prediction = X_state.segment<3>(0);
-            X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
+            X_state = propagate_nominal_state(X_state, u_gyro, u_acc, dt);
             if (odom_lost_for_prediction)
             {
                 X_state.segment<3>(0) =
@@ -541,22 +494,15 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 
             time_last = time_now;
 
-            // Eigen::VectorXd X_state_ahead = X_state + 0.01 * F_model(u_gyro, u_acc);
-            //! changed by wz
-            Eigen::VectorXd X_state_ahead = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, 0.01);
+            Eigen::VectorXd X_state_ahead = propagate_nominal_state(X_state, u_gyro, u_acc, 0.01);
 
-            // if(test_odomtag_call) //no frequency boost
-            // {
-            //     test_odomtag_call = false;
-            //     system_pub(msg->header.stamp);
-            // }
             if (ekf_initialized) {
                 system_pub(X_state, new_msg->header.stamp);
                 ahead_system_pub(X_state_ahead, new_msg->header.stamp);
             }
             drain_pending_odom_measurements();
 
-            // cout << "[IMU] [TimeSync] [OK]" << endl;
+            // cout << "[IMU] [time-sync] [OK]" << endl;
 
             // system_pub(X_state, ros::Time::now());
             // ahead_system_pub(X_state_ahead, ros::Time::now());
@@ -564,14 +510,8 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
     }
 }
 
-// Rotation from the camera frame to the IMU frame
-Matrix3d Rc_i;
-Vector3d tc_i; //  cam in imu frame
-int cnt = 0;
-Vector3d INNOVATION_;
 Matrix3d Rr_i;
 Vector3d tr_i; //  rigid body in imu frame
-int consecutive_reject_count = 0;
 nav_msgs::Path input_path_msg;
 nav_msgs::Path ekf_path_msg;
 nav_msgs::Path measurement_path_msg;
@@ -633,9 +573,12 @@ size_t ekf_active_segment_index = 0;
 int ekf_arrow_counter = 0;
 int ekf_arrow_next_id = 0;
 
+/// @brief Forward declaration for caching odom positions for GNSS alignment.
 void record_odom_position_for_gnss_sync(const ros::Time &stamp, const Vector3d &position);
+/// @brief Forward declaration for GNSS/odom timestamp lookup.
 bool lookup_odom_position_for_gnss_sync(const ros::Time &stamp, Vector3d &position);
 
+/// @brief Create one RViz line-strip marker used to display a continuous EKF segment.
 visualization_msgs::Marker make_ekf_segment_marker(const std::string &frame_id, const ros::Time &stamp, int id)
 {
     visualization_msgs::Marker marker;
@@ -655,6 +598,7 @@ visualization_msgs::Marker make_ekf_segment_marker(const std::string &frame_id, 
     return marker;
 }
 
+/// @brief Create one RViz arrow marker for visualizing current EKF pose heading.
 visualization_msgs::Marker make_ekf_arrow_marker(const std::string &frame_id,
                                                  const ros::Time &stamp,
                                                  int id,
@@ -686,6 +630,7 @@ visualization_msgs::Marker make_ekf_arrow_marker(const std::string &frame_id,
     return marker;
 }
 
+/// @brief Append a downsampled EKF heading arrow to the marker array.
 void append_ekf_arrow_marker(const std::string &frame_id,
                              const Vector3d &position,
                              const Quaterniond &orientation,
@@ -708,6 +653,7 @@ void append_ekf_arrow_marker(const std::string &frame_id,
     ekf_arrows_pub.publish(ekf_arrow_markers);
 }
 
+/// @brief Ensure the EKF segment marker array has an active segment to append to.
 void ensure_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
 {
     if (ekf_segment_markers.markers.empty())
@@ -717,6 +663,7 @@ void ensure_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
     }
 }
 
+/// @brief Append the current fused position to the active EKF trajectory segment.
 void append_pose_to_ekf_segments(const std::string &frame_id,
                                  const Vector3d &position,
                                  const ros::Time &stamp)
@@ -732,6 +679,7 @@ void append_pose_to_ekf_segments(const std::string &frame_id,
     ekf_segments_pub.publish(ekf_segment_markers);
 }
 
+/// @brief Start a new EKF path segment after reset, relocalization, or reinitialization.
 void start_new_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
 {
     ensure_ekf_segment(frame_id, stamp);
@@ -747,6 +695,7 @@ void start_new_ekf_segment(const std::string &frame_id, const ros::Time &stamp)
     ekf_segments_pub.publish(ekf_segment_markers);
 }
 
+/// @brief Append a pose to a nav_msgs/Path with stride-based downsampling and length limit.
 void append_pose_to_path(nav_msgs::Path &path_msg,
                          ros::Publisher &path_pub,
                          const std::string &frame_id,
@@ -783,10 +732,9 @@ void append_pose_to_path(nav_msgs::Path &path_msg,
     path_pub.publish(path_msg);
 }
 
-//! changed by wz
+/// @brief Convert incoming odometry pose from rigid-body frame to IMU-center pose.
 VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
 {
-    // cout << "get_pose_from_VIOodom" << endl;
     Matrix3d Rr_w; // rigid body in world
     Vector3d tr_w;
     Matrix3d Ri_w;
@@ -795,7 +743,6 @@ VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
     p_temp(0) = msg->pose.pose.position.x;
     p_temp(1) = msg->pose.pose.position.y;
     p_temp(2) = msg->pose.pose.position.z;
-    // quaternion2euler:  ZYX  roll pitch yaw
     Quaterniond q;
     q.w() = msg->pose.pose.orientation.w;
     q.x() = msg->pose.pose.orientation.x;
@@ -803,30 +750,22 @@ VectorXd get_pose_from_VIOodom(const nav_msgs::Odometry::ConstPtr &msg)
     q.z() = msg->pose.pose.orientation.z;
     q.normalize();
 
-    // Euler transform
-    //  Ri_w = q.toRotationMatrix();
-    //  ti_w = p_temp;
+    // Convert the reported rigid-body pose to the IMU-center pose using the
+    // configured rigid-body-to-IMU extrinsic Rr_i/tr_i.
     Rr_w = q.toRotationMatrix();
     tr_w = p_temp;
     Ri_w = Rr_w * Rr_i.inverse();
     ti_w = tr_w - Ri_w * tr_i;
-    // Vector3d euler = mat2euler(Ri_w);
-    //! changed by wz
     Quaterniond q_wi = Quaterniond(Ri_w);
 
-    // VectorXd pose = VectorXd::Random(6);
-    //! changed by wz
     VectorXd pose = VectorXd::Random(7);
     pose.segment<3>(0) = ti_w;
-    // pose.segment<3>(3) = euler;
-    //! changed by wz
     pose.segment<4>(3) = Vector4d(q_wi.w(), q_wi.x(), q_wi.y(), q_wi.z());
-
-    // cout << "pose: " << pose << endl;
 
     return pose;
 }
 
+/// @brief Extract yaw angle from a quaternion using the ZYX convention.
 double yaw_from_quaternion(const Quaterniond &q_in)
 {
     Quaterniond q = q_in.normalized();
@@ -834,6 +773,7 @@ double yaw_from_quaternion(const Quaterniond &q_in)
                       1.0 - 2.0 * (q.y() * q.y() + q.z() * q.z()));
 }
 
+/// @brief Build a pure-Z yaw rotation matrix for 2D frame alignment.
 Matrix3d yaw_rotation(double yaw)
 {
     Matrix3d R = Matrix3d::Identity();
@@ -846,6 +786,7 @@ Matrix3d yaw_rotation(double yaw)
     return R;
 }
 
+/// @brief Apply the current odom-frame yaw and translation alignment to an odom pose.
 VectorXd apply_odom_alignment(const VectorXd &raw_pose)
 {
     VectorXd aligned_pose = raw_pose;
@@ -858,6 +799,7 @@ VectorXd apply_odom_alignment(const VectorXd &raw_pose)
     return aligned_pose;
 }
 
+/// @brief Re-estimate odom-frame alignment after detecting a large odom jump.
 void realign_odom_frame(const VectorXd &raw_pose, const ros::Time &stamp, double odom_step)
 {
     if (!odom_measurement_position_initialized)
@@ -880,6 +822,7 @@ void realign_odom_frame(const VectorXd &raw_pose, const ros::Time &stamp, double
              odom_alignment_t.z());
 }
 
+/// @brief Compute an adaptive observation covariance scale from innovation size.
 double adaptive_observation_scale(double innovation_norm, double start_threshold, double reject_threshold, double max_scale)
 {
     if (!enable_adaptive_observation_covariance || innovation_norm <= start_threshold)
@@ -894,6 +837,7 @@ double adaptive_observation_scale(double innovation_norm, double start_threshold
     return 1.0 + ratio * ratio * (max_scale - 1.0);
 }
 
+/// @brief Smoothly map a scalar health metric into a bounded covariance scale.
 double bounded_adaptive_scale(double value, double start_threshold, double reject_threshold, double max_scale)
 {
     if (value <= start_threshold)
@@ -908,11 +852,13 @@ double bounded_adaptive_scale(double value, double start_threshold, double rejec
     return 1.0 + ratio * ratio * (max_scale - 1.0);
 }
 
+/// @brief Clamp a scalar score into the [0, 1] interval.
 double clamp01(double value)
 {
     return std::max(0.0, std::min(1.0, value));
 }
 
+/// @brief Convert a metric where lower is better into a descending health score.
 double descending_score(double value, double good_value, double poor_value)
 {
     if (value <= good_value)
@@ -948,6 +894,7 @@ struct SensorHealthMonitor
     double isolated_until = -1.0;
     int normal_recover_count = 0;
 
+    /// @brief Reset the NIS-based health state machine to HEALTHY.
     void reset()
     {
         window.clear();
@@ -956,6 +903,7 @@ struct SensorHealthMonitor
         normal_recover_count = 0;
     }
 
+    /// @brief Return a printable name for the current health state.
     const char *state_name() const
     {
         switch (state)
@@ -973,6 +921,7 @@ struct SensorHealthMonitor
         }
     }
 
+    /// @brief Update GNSS health state from NIS and return scale/reject decision.
     Decision update(double nis,
                     double stamp,
                     int window_size,
@@ -1073,6 +1022,7 @@ struct SensorHealthMonitor
 
 SensorHealthMonitor gnss_nis_monitor;
 
+/// @brief Fuse covariance, NIS, motion, and status scores into one GNSS health score.
 double gnss_health_score_from_factors(double covariance_score,
                                       double nis_score,
                                       double motion_score,
@@ -1084,6 +1034,7 @@ double gnss_health_score_from_factors(double covariance_score,
                    0.10 * status_score);
 }
 
+/// @brief Compute odom observation scale and update odom health counters.
 double odom_health_scale(double innovation_norm, double stamp_sec)
 {
     last_odom_message_time = stamp_sec;
@@ -1134,6 +1085,7 @@ double odom_health_scale(double innovation_norm, double stamp_sec)
     return scale;
 }
 
+/// @brief Update odom-loss state based on timeout and last accepted odom timestamp.
 bool update_odom_loss_health(double stamp_sec)
 {
     if (odom_loss_timeout <= 0.0)
@@ -1179,6 +1131,7 @@ bool update_odom_loss_health(double stamp_sec)
     return true;
 }
 
+/// @brief Query whether odom should be treated as lost at a given timestamp.
 bool odom_is_lost_at(double stamp_sec)
 {
     if (odom_loss_timeout <= 0.0)
@@ -1193,6 +1146,7 @@ bool odom_is_lost_at(double stamp_sec)
            (stamp_sec - last_odom_message_time) > odom_loss_timeout;
 }
 
+/// @brief Hard-reset nominal state and covariance from an odom pose measurement.
 void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &stamp, const char *reason)
 {
     ROS_WARN("Resetting EKF state from odom measurement at %.3f s: %s", stamp.toSec(), reason);
@@ -1205,7 +1159,6 @@ void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &sta
     cov_seq.clear();
     imu_front_time = ros::Time(0);
     imu_back_time = ros::Time(0);
-    consecutive_reject_count = 0;
     last_odom_message_time = stamp.toSec();
     odom_ever_initialized = true;
     odom_loss_reported = false;
@@ -1219,6 +1172,7 @@ void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &sta
     start_new_ekf_segment(world_frame_id, stamp);
 }
 
+/// @brief Select primary or fallback odometry source with startup grace handling.
 bool should_use_odom_source(const nav_msgs::Odometry::ConstPtr &msg,
                             const std::string &source_name,
                             bool is_primary)
@@ -1266,6 +1220,7 @@ bool should_use_odom_source(const nav_msgs::Odometry::ConstPtr &msg,
     return false;
 }
 
+/// @brief Build the odom measurement covariance, optionally from nav_msgs/Odometry covariance.
 MatrixXd odom_measurement_covariance_from_msg(const nav_msgs::Odometry::ConstPtr &msg)
 {
     MatrixXd R = Rt;
@@ -1301,6 +1256,13 @@ MatrixXd odom_measurement_covariance_from_msg(const nav_msgs::Odometry::ConstPtr
     return R;
 }
 
+/// @brief Apply an odom update directly to the latest EKF state without IMU replay.
+///
+/// This is not a dead path: process_vioodom() calls it when the odom stamp is
+/// older than the cached IMU buffer front, or when the buffer does not contain
+/// enough samples to replay to the exact odom time. In that case the filter uses
+/// the latest nominal state X=[p,q,v,bg,ba] and the 15D error covariance
+/// directly, avoiding an invalid time-synchronized rollback.
 void update_lastest_state()
 {
     MatrixXd Ct;
@@ -1322,20 +1284,20 @@ void update_lastest_state()
     Quaterniond error_q = q_gg.inverse() * q_Z_measurement;
     error_q.normalize();
     innovation.segment<3>(3) = rotation_2_lie_algebra(error_q.toRotationMatrix());
-    VectorXd innovation_t = gg;
     // Prevent innovation changing suddenly when euler from -Pi to Pi
     float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
     if (pos_diff > POS_DIFF_THRESHOLD)
     {
-        ROS_WARN_THROTTLE(5.0, "posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
+        ROS_WARN_THROTTLE(5.0,
+                          "Position diff too large between measurement and model prediction: threshold %.3f m, measured %.3f m",
+                          POS_DIFF_THRESHOLD,
+                          pos_diff);
         // return;
     }
     const double odom_scale = odom_health_scale(pos_diff, time_odom_tag_now);
     const MatrixXd R_odom = odom_scale * Wt * current_odom_Rt * Wt.transpose();
     Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom).inverse();
 
-
-    INNOVATION_ = innovation_t.segment<3>(3);
     // X_state += Kt_kalmanGain * (innovation);
     X_state = boxplus(X_state, Kt_kalmanGain * (innovation));
 
@@ -1343,29 +1305,8 @@ void update_lastest_state()
 
     // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
     // cout << "z " << Z_measurement(2) << " k " << Kt_kalmanGain(2) << " inn " << innovation(2) << endl;
-
-    test_odomtag_call = true;
-    odomtag_call = true;
-
-    if (INNOVATION_(0) > 6 || INNOVATION_(1) > 6 || INNOVATION_(2) > 6)
-        cout << "\ninnovation: \n"
-             << INNOVATION_ << endl;
-    if (INNOVATION_(0) < -6 || INNOVATION_(1) < -6 || INNOVATION_(2) < -6)
-        cout << "\ninnovation: \n"
-             << INNOVATION_ << endl;
-    // monitor the position changing
-    if (cnt == 10 || cnt == 50 || cnt == 90)
-    {
-        // cout << "Ct: \n" << Ct << "\nWt:\n" << Wt << endl;
-        // cout << "Kt_kalmanGain: \n" << Kt_kalmanGain << endl;
-        // cout << "\ninnovation: \n" << Kt_kalmanGain*innovation  << "\ndt:\n" << dt << endl;
-        // cout << "\ninnovation: \n" << Kt_kalmanGain*innovation  << endl;
-        // cout << "\ninnovation: \n" << INNOVATION_ << endl;
-    }
-    cnt++;
-    if (cnt > 100)
-        cnt = 101;
 }
+/// @brief Convert a rotation matrix residual into a 3D Lie-algebra error vector.
 Vector3d rotation_2_lie_algebra(Matrix3d R)
 {
 
@@ -1390,6 +1331,7 @@ Vector3d rotation_2_lie_algebra(Matrix3d R)
     return omega;
 }
 
+/// @brief Odom callback core: initialize, align, gate, time-sync update, and replay IMU.
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 { // assume that the odom_tag from camera is sychronized with the imus and without delay. !!!
 
@@ -1435,8 +1377,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         if (initialize_filter_from_odom || !ekf_initialized)
         {
             X_state.segment<3>(0) = odom_pose.segment<3>(0);
-            // X_state.segment<3>(3) = odom_pose.segment<3>(3);
-            //! changed by wz
             X_state.segment<4>(3) = odom_pose.segment<4>(3);
             normalize_state_quaternion(X_state);
             X_state.segment<3>(7) << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z;
@@ -1452,7 +1392,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         last_pos(1) = msg->pose.pose.position.y;
         last_pos(2) = msg->pose.pose.position.z;
 
-        first_odom_get_ = last_pos;
         last_odom_measurement_position = odom_pose.segment<3>(0);
         last_odom_measurement_orientation = Quaterniond(odom_pose(3), odom_pose(4), odom_pose(5), odom_pose(6)).normalized();
         odom_measurement_position_initialized = true;
@@ -1477,7 +1416,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // cout << "\033[1;33m"
         //  << "odom_tag update"
         //  << "\033[0m" << endl;
-#if TimeSync
         if (sys_seq.empty() || msg->header.stamp > imu_back_time + ros::Duration(1.0e-4))
         {
             pending_odom_measurements.push_back(msg);
@@ -1496,7 +1434,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
                               wait_ms);
             return;
         }
-#endif
         double odom_step = (last_pos - Vector3d(msg->pose.pose.position.x,
                                                 msg->pose.pose.position.y,
                                                 msg->pose.pose.position.z))
@@ -1540,19 +1477,11 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         last_odom_measurement_orientation = Quaterniond(odom_pose(3), odom_pose(4), odom_pose(5), odom_pose(6)).normalized();
         odom_measurement_position_initialized = true;
         record_odom_position_for_gnss_sync(msg->header.stamp, last_odom_measurement_position);
-        // Eigen::Vector3d euler_odom(odom_pose(3), odom_pose(4), odom_pose(5));
-        //! changed by wz
-        Eigen::Quaterniond q_odom(odom_pose(3), odom_pose(4), odom_pose(5), odom_pose(6));
-        Matrix3d R_odom;
-        // R_odom = euler2mat(euler_odom);
-        //! changed by wz
-        R_odom = q_odom.toRotationMatrix();
 
         Z_measurement.segment<3>(0) = odom_pose.segment<3>(0);
         Z_measurement.segment<4>(3) = odom_pose.segment<4>(3);
 
 
-#if TimeSync
         // call back to the proper time
         if (sys_seq.size() == 0 || buffertime_ms > 0)
         {
@@ -1570,84 +1499,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         }
         search_proper_frame(time_odom_tag_now);
 
-#endif
-
         // cam_system_pub(msg->header.stamp);
-
-#if !TimeSync // no aligned
-        MatrixXd Ct;
-        MatrixXd Wt;
-        Ct = diff_g_diff_x();
-        Wt = diff_g_diff_v();
-
-        Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + Wt * Rt * Wt.transpose()).inverse();
-        VectorXd gg = g_model();
-        VectorXd innovation = Z_measurement - gg;
-        VectorXd innovation_t = gg;
-
-        // Prevent innovation changing suddenly when euler from -Pi to Pi
-        float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
-        if (pos_diff > POS_DIFF_THRESHOLD)
-        {
-            ROS_WARN_THROTTLE(5.0, "posintion diff too much between measurement and model prediction!!!   pos_diff setting: %f  but the diff measured is %f ", POS_DIFF_THRESHOLD, pos_diff);
-            return;
-        }
-        if (innovation(3) > 6)
-            innovation(3) -= 2 * PI;
-        if (innovation(3) < -6)
-            innovation(3) += 2 * PI;
-        if (innovation(4) > 6)
-            innovation(4) -= 2 * PI;
-        if (innovation(4) < -6)
-            innovation(4) += 2 * PI;
-        if (innovation(5) > 6)
-            innovation(5) -= 2 * PI;
-        if (innovation(5) < -6)
-            innovation(5) += 2 * PI;
-        INNOVATION_ = innovation_t.segment<3>(3);
-        X_state += Kt_kalmanGain * (innovation);
-        1.4571 X_state(3) -= 2 * PI;
-        if (X_state(3) < -PI)
-            X_state(3) += 2 * PI;
-        if (X_state(4) > PI)
-            X_state(4) -= 2 * PI;
-        if (X_state(4) < -PI)
-            X_state(4) += 2 * PI;
-        if (X_state(5) > PI)
-            X_state(5) -= 2 * PI;
-        if (X_state(5) < -PI)
-            X_state(5) += 2 * PI;
-        joseph_covariance_update(Ct, Kt_kalmanGain, Wt * Rt * Wt.transpose());
-
-        // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
-        // cout << "z " << Z_measurement(2) << " k " << Kt_kalmanGain(2) << " inn " << innovation(2) << endl;
-
-        test_odomtag_call = true;
-        odomtag_call = true;
-
-        if (INNOVATION_(0) > 6 || INNOVATION_(1) > 6 || INNOVATION_(2) > 6)
-            cout << "\ninnovation: \n"
-                 << INNOVATION_ << endl;
-        if (INNOVATION_(0) < -6 || INNOVATION_(1) < -6 || INNOVATION_(2) < -6)
-            cout << "\ninnovation: \n"
-                 << INNOVATION_ << endl;
-        // monitor the position changing
-        if ((innovation(0) > 1.5) || (innovation(1) > 1.5) || (innovation(2) > 1.5) ||
-            (innovation(0) < -1.5) || (innovation(1) < -1.5) || (innovation(2) < -1.5))
-            ROS_ERROR("posintion diff too much between measurement and model prediction!!!");
-        if (cnt == 10 || cnt == 50 || cnt == 90)
-        {
-            // cout << "Ct: \n" << Ct << "\nWt:\n" << Wt << endl;
-            // cout << "Kt_kalmanGain: \n" << Kt_kalmanGain << endl;
-            // cout << "\ninnovation: \n" << Kt_kalmanGain*innovation  << "\ndt:\n" << dt << endl;
-            // cout << "\ninnovation: \n" << Kt_kalmanGain*innovation  << endl;
-            // cout << "\ninnovation: \n" << INNOVATION_ << endl;
-        }
-        cnt++;
-        if (cnt > 100)
-            cnt = 101;
-
-#else // time sync
         MatrixXd Ct;
         MatrixXd Wt;
 
@@ -1673,11 +1525,9 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         q_last.y() = sys_seq[0].first(5);
         q_last.z() = sys_seq[0].first(6);
 
-        bg_last = sys_seq[0].first.segment<3>(10); // last X4
-        ba_last = sys_seq[0].first.segment<3>(13); // last X5
+        bg_last = sys_seq[0].first.segment<3>(10);
+        ba_last = sys_seq[0].first.segment<3>(13);
 
-        // Ft = MatrixXd::Identity(stateSize, stateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
-        //! changed by wz
         Ft = MatrixXd::Identity(errorstateSize, errorstateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
 
         // std::cout << "Ft" << std::endl
@@ -1688,9 +1538,7 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // std::cout << "Vt" << std::endl
         //   << Vt << std::endl;
 
-        // X_state += dt * F_model(u_gyro, u_acc);
-        //! changed by wz
-        X_state = upate_state_Quaterniond_F_model(X_state, u_gyro, u_acc, dt);
+        X_state = propagate_nominal_state(X_state, u_gyro, u_acc, dt);
         // std::cout << "X_state" << std::endl
         //   << X_state << std::endl;
 
@@ -1736,8 +1584,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         //           << innovation << "\033[0m" << std::endl;
         // std::cout << "\033[1;33m position diff: " << sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2)) << std::endl;
         // std::cout << "angle diff: " << sqrt(innovation(3) * innovation(3) + innovation(4) * innovation(4) + innovation(5) * innovation(5)) << "\033[0m" << std::endl;
-        VectorXd innovation_t = gg;
-
         float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
         if (pos_diff > innovation_reject_threshold)
         {
@@ -1757,15 +1603,10 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         const double odom_scale = odom_health_scale(pos_diff, msg->header.stamp.toSec());
         const MatrixXd R_odom_meas = odom_scale * Wt * current_odom_Rt * Wt.transpose();
         Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom_meas).inverse();
-        consecutive_reject_count = 0;
-
-  
 
         // Quaterniond test_q = Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)) * error_q;
         // std::cout << "\033[1;31m test_q" << std::endl
         //           << test_q << "\033[0m" << std::endl;
-
-        INNOVATION_ = innovation_t.segment<3>(3);
 
         VectorXd dx(errorstateSize);
         dx = VectorXd::Zero(errorstateSize);
@@ -1777,23 +1618,6 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 
         // X_state += Kt_kalmanGain * (innovation);
         X_state = boxplus(X_state, dx);
-        Vector3d X_state_p = X_state.segment<3>(0);
-        VectorXd final_innovation = VectorXd::Zero(6);
-        final_innovation.segment<3>(0) = Z_measurement.segment<3>(0) - X_state_p;
-        // std::cout << "\033[1;32m Z_measurement.segment<3>(0)" << std::endl
-        //           << Z_measurement.segment<3>(0) << "\033[0m" << std::endl;
-        // std::cout << "X_state_p" << std::endl
-        //           << X_state_p << std::endl;
-
-        Quaterniond q_X_state_q(X_state(3), X_state(4), X_state(5), X_state(6));
-        Quaterniond q_Z_measurement_(Z_measurement(3), Z_measurement(4), Z_measurement(5), Z_measurement(6));
-        Quaterniond error_q_ = q_Z_measurement_ * q_X_state_q.inverse();
-        Matrix3d error_R_ = error_q_.toRotationMatrix();
-        final_innovation.segment<3>(3) = rotation_2_lie_algebra(error_R_);
-        // std::cout << "\033[1;32m final_innovation" << std::endl
-        //           << final_innovation << "\033[0m" << std::endl;
-        // std::cout << "\033[1;33m position diff: " << sqrt(final_innovation(0) * final_innovation(0) + final_innovation(1) * final_innovation(1) + final_innovation(2) * final_innovation(2)) << std::endl;
-        // std::cout << "angle diff: " << sqrt(final_innovation(3) * final_innovation(3) + final_innovation(4) * final_innovation(4) + final_innovation(5) * final_innovation(5)) << "\033[0m" << std::endl;
 
         // std::cout << "X_state_update" << std::endl
         //           << X_state << std::endl;
@@ -1803,12 +1627,11 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         // std::cout << "re_propagate" << std::endl;
 
         re_propagate();
-
-#endif
         cam_system_pub(msg->header.stamp);
     }
 }
 
+/// @brief Process pending odom measurements once the IMU buffer has caught up.
 void drain_pending_odom_measurements()
 {
     while (!pending_odom_measurements.empty())
@@ -1828,6 +1651,7 @@ void drain_pending_odom_measurements()
     }
 }
 
+/// @brief Primary odom subscriber wrapper with source arbitration.
 void vioodom_primary_callback(const nav_msgs::Odometry::ConstPtr &msg)
 {
     if (should_use_odom_source(msg, "primary", true))
@@ -1836,6 +1660,7 @@ void vioodom_primary_callback(const nav_msgs::Odometry::ConstPtr &msg)
     }
 }
 
+/// @brief Fallback odom subscriber wrapper used when the primary source is unavailable.
 void vioodom_fallback_callback(const nav_msgs::Odometry::ConstPtr &msg)
 {
     if (should_use_odom_source(msg, "fallback", false))
@@ -1844,6 +1669,7 @@ void vioodom_fallback_callback(const nav_msgs::Odometry::ConstPtr &msg)
     }
 }
 
+/// @brief Convert NavSatFix latitude, longitude, and altitude into a local ENU position.
 bool navsat_to_local_enu(const sensor_msgs::NavSatFix::ConstPtr &msg, Vector3d &enu)
 {
     if (!std::isfinite(msg->latitude) || !std::isfinite(msg->longitude) || !std::isfinite(msg->altitude))
@@ -1873,6 +1699,7 @@ bool navsat_to_local_enu(const sensor_msgs::NavSatFix::ConstPtr &msg, Vector3d &
     return true;
 }
 
+/// @brief Initialize the EKF from GNSS when odom has not yet provided an initial pose.
 bool initialize_filter_from_gnss(const Vector3d &gnss_local, const ros::Time &stamp)
 {
     if (!enable_gnss_cold_start)
@@ -1943,6 +1770,7 @@ bool initialize_filter_from_gnss(const Vector3d &gnss_local, const ros::Time &st
     return true;
 }
 
+/// @brief Store recent odom positions for later GNSS/odom timestamp matching.
 void record_odom_position_for_gnss_sync(const ros::Time &stamp, const Vector3d &position)
 {
     const double stamp_sec = stamp.toSec();
@@ -1958,6 +1786,7 @@ void record_odom_position_for_gnss_sync(const ros::Time &stamp, const Vector3d &
     }
 }
 
+/// @brief Find the nearest odom position sample to a GNSS timestamp within tolerance.
 bool lookup_odom_position_for_gnss_sync(const ros::Time &stamp, Vector3d &position)
 {
     if (odom_position_history.empty())
@@ -1981,6 +1810,7 @@ bool lookup_odom_position_for_gnss_sync(const ros::Time &stamp, Vector3d &positi
     return found && best_dt <= gnss_odom_sync_max_dt;
 }
 
+/// @brief Estimate GNSS-to-odom yaw and translation alignment from paired positions.
 void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_position, const ros::Time &stamp)
 {
     if (!gnss_alignment_initialized)
@@ -2081,9 +1911,10 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
              residual_max,
              gnss_alignment_offset.x(),
              gnss_alignment_offset.y(),
-             gnss_alignment_offset.z());
+	             gnss_alignment_offset.z());
 }
 
+/// @brief GNSS callback: ENU conversion, alignment, health gating, and position update.
 void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
 {
     if (!use_gnss || msg->status.status < gnss_min_status)
@@ -2612,9 +2443,10 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                         world_frame_id,
                         z_gnss,
                         Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)),
-                        msg->header.stamp,
-                        gnss_path_counter);
+	                        msg->header.stamp,
+	                        gnss_path_counter);
 }
+/// @brief Convert a 3D Lie-algebra rotation vector to a rotation matrix.
 Matrix3d lie_algebra_2_rotation(Vector3d v)
 {
 
@@ -2637,6 +2469,7 @@ Matrix3d lie_algebra_2_rotation(Vector3d v)
 
     return R;
 }
+/// @brief Apply a 15D error-state increment to the 16D nominal state.
 VectorXd boxplus(VectorXd x, VectorXd dx)
 {
     VectorXd x_plus(x.rows());
@@ -2672,23 +2505,7 @@ VectorXd boxplus(VectorXd x, VectorXd dx)
     return x_plus;
 }
 
-Quaterniond q_gt, q_gt0;
-bool first_gt = true;
-void gt_callback(const nav_msgs::Odometry::ConstPtr &msg)
-{
-    q_gt.w() = msg->pose.pose.orientation.w;
-    q_gt.x() = msg->pose.pose.orientation.x;
-    q_gt.y() = msg->pose.pose.orientation.y;
-    q_gt.z() = msg->pose.pose.orientation.z;
-
-    if (first_gt && !first_frame_tag_odom)
-    {
-        first_gt = false;
-        q_gt0 = q_gt;
-        // q_gt0 = q_gt0.normalized();
-    }
-}
-
+/// @brief ROS node entry point: parameters, subscribers, publishers, and EKF init.
 int main(int argc, char **argv)
 {
   int core_id = 5;
@@ -2708,12 +2525,10 @@ int main(int argc, char **argv)
     ros::Subscriber s1 = n.subscribe("imu", 1000, imu_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s2 = n.subscribe("bodyodometry_primary", 40, vioodom_primary_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s3 = n.subscribe("bodyodometry_fallback", 40, vioodom_fallback_callback, ros::TransportHints().tcpNoDelay());
-    ros::Subscriber s4 = n.subscribe("gt_", 40, gt_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s5 = n.subscribe("gnss_fix", 40, gnss_fix_callback, ros::TransportHints().tcpNoDelay());
     odom_pub = n.advertise<nav_msgs::Odometry>("ekf_odom", 1000);             // freq = imu freq
     ahead_odom_pub = n.advertise<nav_msgs::Odometry>("ahead_ekf_odom", 1000); // freq = imu freq
     cam_odom_pub = n.advertise<nav_msgs::Odometry>("cam_ekf_odom", 1000);
-    acc_filtered_pub = n.advertise<geometry_msgs::PoseStamped>("acc_filtered", 1000);
     input_path_pub = n.advertise<nav_msgs::Path>("input_path", 10, true);
     ekf_path_pub = n.advertise<nav_msgs::Path>("ekf_path", 10, true);
     measurement_path_pub = n.advertise<nav_msgs::Path>("measurement_path", 10, true);
@@ -2735,7 +2550,6 @@ int main(int argc, char **argv)
     n.getParam("offset_pz", offset_pz);
     n.getParam("publish_warmup_frames", publish_warmup_frames);
     n.getParam("odom_jump_threshold", odom_jump_threshold);
-    n.getParam("odom_reset_threshold", odom_reset_threshold);
     n.getParam("innovation_reject_threshold", innovation_reject_threshold);
     n.getParam("innovation_reset_threshold", innovation_reset_threshold);
     n.getParam("odom_use_msg_covariance", odom_use_msg_covariance);
@@ -2769,7 +2583,6 @@ int main(int argc, char **argv)
     n.getParam("gnss_cov_scale", gnss_cov_scale);
     n.getParam("gnss_position_covariance_floor_xy", gnss_position_covariance_floor_xy);
     n.getParam("gnss_position_covariance_floor_z", gnss_position_covariance_floor_z);
-    n.getParam("gnss_innovation_gate", gnss_innovation_gate);
     n.getParam("enable_gnss_mahalanobis_gate", enable_gnss_mahalanobis_gate);
     n.getParam("gnss_mahalanobis_weak_threshold", gnss_mahalanobis_weak_threshold);
     n.getParam("gnss_mahalanobis_reject_threshold", gnss_mahalanobis_reject_threshold);
@@ -2810,7 +2623,6 @@ int main(int argc, char **argv)
     n.getParam("gnss_odom_sync_max_dt", gnss_odom_sync_max_dt);
     n.getParam("gnss_alignment_max_residual", gnss_alignment_max_residual);
     n.getParam("gnss_min_status", gnss_min_status);
-    n.getParam("reject_reinit_limit", reject_reinit_limit);
     n.getParam("path_publish_stride", path_publish_stride);
     n.getParam("path_max_points", path_max_points);
     n.getParam("arrow_publish_stride", arrow_publish_stride);
@@ -2846,36 +2658,7 @@ int main(int argc, char **argv)
     ros::spin();
 }
 
-void acc_f_pub(Vector3d acc, ros::Time stamp)
-{
-    geometry_msgs::PoseStamped Accel_filtered;
-    Accel_filtered.header.frame_id = world_frame_id;
-    Accel_filtered.header.stamp = stamp;
-    // Accel_filtered.header.stamp = ros::Time::now();
-    Vector3d Acc_ = get_filtered_acc(acc);
-    Accel_filtered.pose.position.x = Acc_[0];
-    Accel_filtered.pose.position.y = Acc_[1];
-    Accel_filtered.pose.position.z = Acc_[2];
-
-    Quaterniond q;
-    // q = euler2quaternion(X_state.segment<3>(3));
-    //! changed by wz
-    q = X_state.segment<4>(3);
-    // q = q.normalized();
-    Accel_filtered.pose.orientation.w = q.w();
-    Accel_filtered.pose.orientation.x = q.x();
-    Accel_filtered.pose.orientation.y = q.y();
-    Accel_filtered.pose.orientation.z = q.z();
-
-
-    cout << "q_gt0: " << quaternion2euler(q_gt0) << endl;
-    cout << "q_gt: " << quaternion2euler(q_gt) << endl;
-    cout << "q_vio: " << mat2euler(q_gt0.toRotationMatrix() * euler2quaternion(X_state.segment<3>(3)).toRotationMatrix()) << endl;
-    cout << "q_gt0*vio != q_gt: " << quaternion2euler(q_gt0 * q) << endl;
-    // cout << "q_gt0*vio*q_gt0^-1 = q_gt: " << quaternion2euler(q_gt0 * q * q_gt0.inverse()) << endl;   //q1*euler2quaternion(V)*q1.inverse()  = q1.toRotationMatrix() * V  TODO why?
-
-    acc_filtered_pub.publish(Accel_filtered);
-}
+/// @brief Publish a short-horizon predicted odometry state for feed-forward consumers.
 void ahead_system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
 {
     nav_msgs::Odometry odom_fusion;
@@ -2884,14 +2667,11 @@ void ahead_system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     // odom_fusion.header.frame_id = "imu";
 
     Quaterniond q;
-    // q = euler2quaternion(X_state_in.segment<3>(3));
-    //! changed by wz
     q = X_state_in.segment<4>(3);
     odom_fusion.pose.pose.orientation.w = q.w();
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    //! changed by wz
     odom_fusion.twist.twist.linear.x = X_state_in(7);
     odom_fusion.twist.twist.linear.y = X_state_in(8);
     odom_fusion.twist.twist.linear.z = X_state_in(9);
@@ -2904,17 +2684,14 @@ void ahead_system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
 
     ahead_odom_pub.publish(odom_fusion);
 }
+/// @brief Publish the main fused EKF odometry and append visualization paths/markers.
 void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
 {
     nav_msgs::Odometry odom_fusion;
     odom_fusion.header.stamp = stamp;
     odom_fusion.header.frame_id = world_frame_id;
-    // odom_fusion.header.frame_id = world_frame_id;
-    // odom_fusion.header.frame_id = "imu";
 
     Quaterniond q;
-    // q = euler2quaternion(X_state_in.segment<3>(3));
-    //! changed by wz
     q.w() = X_state_in(3);
     q.x() = X_state_in(4);
     q.y() = X_state_in(5);
@@ -2923,7 +2700,6 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    //! changed by wz
     odom_fusion.twist.twist.linear.x = X_state_in(7);
     odom_fusion.twist.twist.linear.y = X_state_in(8);
     odom_fusion.twist.twist.linear.z = X_state_in(9);
@@ -2985,6 +2761,7 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
                                     stamp);
     }
 }
+/// @brief Publish the current odom measurement pose that entered the EKF update.
 void cam_system_pub(ros::Time stamp)
 {
     nav_msgs::Odometry odom_fusion;
@@ -2995,8 +2772,6 @@ void cam_system_pub(ros::Time stamp)
     odom_fusion.pose.pose.position.z = Z_measurement(2);
     Quaterniond q;
 
-    // q = euler2quaternion(Z_measurement.segment<3>(3));
-    //! changed by wz
     q = Z_measurement.segment<4>(3);
 
     odom_fusion.pose.pose.orientation.w = q.w();
@@ -3011,75 +2786,38 @@ void cam_system_pub(ros::Time stamp)
 }
 
 // process model
+/// @brief Initialize nominal state, error-state covariance, process noise, and odom R.
 void initsys()
 {
-    //  camera position in the IMU frame = (0.05, 0.05, 0)
-    // camera orientaion in the IMU frame = Quaternion(0, 1, 0, 0); w x y z, respectively
-    //					   RotationMatrix << 1, 0, 0,
-    //							             0, -1, 0,
-    //                                       0, 0, -1;
-    // set the cam2imu params
-    Rc_i = Quaterniond(0, 1, 0, 0).toRotationMatrix();
-    // cout << "R_cam" << endl << Rc_i << endl;
-    tc_i << 0.05, 0.05, 0;
+    // The nominal state keeps a unit quaternion, so it has 16 scalars. Its
+    // covariance is kept on the 15D minimal error state to avoid a singular
+    // quaternion covariance block.
+    stateSize = 16;
+    errorstateSize = 15;
+    measurementSize = 7;
+    inputSize = 6;
 
-    //  rigid body position in the IMU frame = (0, 0, 0.04)
-    // rigid body orientaion in the IMU frame = Quaternion(1, 0, 0, 0); w x y z, respectively
-    //					   RotationMatrix << 1, 0, 0,
-    //						 	             0, 1, 0,
-    //                                       0, 0, 1;
-
-    // states X [p q pdot bg ba]  [px,py,pz, wx,wy,wz, vx,vy,vz bgx,bgy,bgz bax,bay,baz]
-    // stateSize = 15;                      // x = [p q pdot bg ba]
-
-    stateSize = 16; //! changed by wz
-
-    errorstateSize = 15; // ! changed by wz
-
-    // stateSize_pqv = 9;                   // x = [p q pdot]
-
-    stateSize_pqv = 10; // ! changed by wz
-
-    // measurementSize = 6;                 // z = [p q]
-
-    measurementSize = 7; //! changed by wz
-
-    inputSize = 6;                       // u = [w a]
-    X_state = VectorXd::Zero(stateSize); // x
-    // velocity
-    // X_state(6) = 0;
-    // X_state(7) = 0;
-    // X_state(8) = 0;
-    X_state(3) = 1.0; //! changed by wz
+    X_state = VectorXd::Zero(stateSize);
+    X_state(3) = 1.0;
     X_state(4) = 0;
     X_state(5) = 0;
     X_state(6) = 0;
     X_state(7) = 0;
     X_state(8) = 0;
     X_state(9) = 0;
-    // bias
-    X_state.segment<3>(10) = bg_0; //! changed by wz
+    // Initial gyro and accelerometer biases are parameterized as constants here.
+    X_state.segment<3>(10) = bg_0;
     X_state.segment<3>(13) = ba_0;
-    u_input = VectorXd::Zero(inputSize);
-    Z_measurement = VectorXd::Zero(measurementSize); // z
-    // StateCovariance = MatrixXd::Identity(stateSize, stateSize);     // sigma
-    //! changed by wz
-    StateCovariance = MatrixXd::Identity(errorstateSize, errorstateSize); // sigma
+    Z_measurement = VectorXd::Zero(measurementSize);
+    StateCovariance = MatrixXd::Identity(errorstateSize, errorstateSize);
 
     Kt_kalmanGain = MatrixXd::Identity(stateSize, measurementSize); // Kt
     // Ct_stateToMeasurement = MatrixXd::Identity(stateSize, measurementSize);         // Ct
-    X_state_correct = X_state;
-    StateCovariance_correct = StateCovariance;
 
-    Qt = MatrixXd::Identity(inputSize, inputSize); // 6x6 input [gyro acc]covariance
-    // Rt = MatrixXd::Identity(measurementSize, measurementSize); // 6x6 measurement [p q]covariance
-    //! changed by wz
-    Rt = MatrixXd::Identity(measurementSize - 1, measurementSize - 1); // 6x6 measurement [p q]covariance
-    // MatrixXd temp_Rt = MatrixXd::Identity(measurementSize, measurementSize);
+    Qt = MatrixXd::Identity(inputSize, inputSize);
+    Rt = MatrixXd::Identity(measurementSize - 1, measurementSize - 1);
 
-    // You should also tune these parameters
-    // Q imu covariance matrix; Rt visual odomtry covariance matrix
-    // //Rt visual odomtry covariance smaller believe measurement more
+    // Smaller Q trusts IMU propagation more; smaller Rt trusts odom pose updates more.
     Qt.topLeftCorner(3, 3) = gyro_cov * Qt.topLeftCorner(3, 3);
     Qt.bottomRightCorner(3, 3) = acc_cov * Qt.bottomRightCorner(3, 3);
     Rt.topLeftCorner(3, 3) = position_cov * Rt.topLeftCorner(3, 3);
@@ -3089,11 +2827,10 @@ void initsys()
 }
 
 
-//! changed by wz
+/// @brief Extract the current nominal state components from X_state.
 void getState(Vector3d &p, Quaterniond &q, Vector3d &v, Vector3d &bg, Vector3d &ba)
 {
     p = X_state.segment<3>(0);
-    // q = X_state.segment<4>(3);
     q = Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6));
     v = X_state.segment<3>(7);
     bg = X_state.segment<3>(10);
@@ -3101,39 +2838,12 @@ void getState(Vector3d &p, Quaterniond &q, Vector3d &v, Vector3d &bg, Vector3d &
 }
 
 
-//! changed by wz
-VectorXd get_filtered_acc(Vector3d acc)
+/// @brief Discrete IMU propagation for the 16D nominal state.
+VectorXd propagate_nominal_state(VectorXd X_state, Vector3d gyro, Vector3d acc, double dt)
 {
-    Vector3d ba;
-    ba = X_state.segment<3>(13);
-    return ((acc - ba - na));
-}
-
-
-//! changed by wz
-VectorXd F_model(Vector3d gyro, Vector3d acc)
-{
-    // IMU is in FLU frame
-    // Transform IMU frame into "world" frame whose original point is FLU's original point and the XOY plain is parallel with the ground and z axis is up
-    VectorXd f(VectorXd::Zero(stateSize));
-    Vector3d p, v, bg, ba;
-    Quaterniond q;
-    getState(p, q, v, bg, ba);
-    f.segment<3>(0) = v;                          // 0,1,2
-    f.segment<3>(4) = q * (gyro - bg - ng) * 0.5; // 4,5,6
-    f.segment<3>(7) = gravity + q * (acc - ba - na);
-    f.segment<3>(10) = nbg;
-    f.segment<3>(13) = nba;
-
-    return f;
-}
-
-//? added by wz
-VectorXd upate_state_Quaterniond_F_model(VectorXd X_state, Vector3d gyro, Vector3d acc, double dt)
-{
-    // IMU is in FLU frame
-    // Transform IMU frame into "world" frame whose original point is FLU's original point and the XOY plain is parallel with the ground and z axis is up
-    VectorXd upate_X_state(VectorXd::Zero(stateSize));
+    // IMU measurements are bias-corrected in the body frame, rotated by q into
+    // the world frame, then integrated with constant acceleration over dt.
+    VectorXd updated_X_state(VectorXd::Zero(stateSize));
 
     const Vector3d v = X_state.segment<3>(7);
     const Vector3d bg = X_state.segment<3>(10);
@@ -3143,34 +2853,30 @@ VectorXd upate_state_Quaterniond_F_model(VectorXd X_state, Vector3d gyro, Vector
     const Vector3d unbiased_gyro = gyro - bg - ng;
     const Vector3d world_acc = gravity + q * (acc - ba - na);
 
-    upate_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * world_acc * dt * dt;
+    updated_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * world_acc * dt * dt;
 
-    Quaterniond upate_q = (q * delta_quaternion_from_gyro(unbiased_gyro, dt)).normalized();
-    upate_X_state(3) = upate_q.w();
-    upate_X_state(4) = upate_q.x();
-    upate_X_state(5) = upate_q.y();
-    upate_X_state(6) = upate_q.z();
-    upate_X_state.segment<3>(7) = X_state.segment<3>(7) + world_acc * dt;
-    upate_X_state.segment<3>(10) = X_state.segment<3>(10) + nbg * dt;
-    upate_X_state.segment<3>(13) = X_state.segment<3>(13) + nba * dt;
-    return upate_X_state;
+    Quaterniond updated_q = (q * delta_quaternion_from_gyro(unbiased_gyro, dt)).normalized();
+    updated_X_state(3) = updated_q.w();
+    updated_X_state(4) = updated_q.x();
+    updated_X_state(5) = updated_q.y();
+    updated_X_state(6) = updated_q.z();
+    updated_X_state.segment<3>(7) = X_state.segment<3>(7) + world_acc * dt;
+    updated_X_state.segment<3>(10) = X_state.segment<3>(10) + nbg * dt;
+    updated_X_state.segment<3>(13) = X_state.segment<3>(13) + nba * dt;
+    return updated_X_state;
 }
 
 
-//! changed by wz
+/// @brief Measurement model for odom pose: return nominal [p,q].
 VectorXd g_model()
 {
     VectorXd g(VectorXd::Zero(measurementSize));
 
     g.segment<7>(0) = X_state.segment<7>(0);
-
-
-
     return g;
 }
 
-
-//? added by wz
+/// @brief Return the skew-symmetric matrix used in SO(3) Jacobians.
 Matrix3d hat(Vector3d v)
 {
     Matrix3d v_hat;
@@ -3180,23 +2886,19 @@ Matrix3d hat(Vector3d v)
     return v_hat;
 }
 
-//! changed by wz
+/// @brief Error-state process Jacobian F for IMU prediction.
 MatrixXd diff_f_diff_x(Quaterniond q_last, Vector3d gyro, Vector3d acc, Vector3d bg_last, Vector3d ba_last)
 {
-
-   
     MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(errorstateSize, errorstateSize));
     diff_f_diff_x_jacobian.block<3, 3>(0, 6) = Eigen::Matrix3d::Identity(); // dp/dv
-	    diff_f_diff_x_jacobian.block<3, 3>(3, 3) = -hat(gyro - bg_last);       // d(dtheta)/d(theta)  missing term fixed
-    diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -Eigen::Matrix3d::Identity();
-    diff_f_diff_x_jacobian.block<3, 3>(6, 3) = -q_last.toRotationMatrix() * hat(acc - ba_last); //!!!!
-    diff_f_diff_x_jacobian.block<3, 3>(6, 12) = -q_last.toRotationMatrix();
+    diff_f_diff_x_jacobian.block<3, 3>(3, 3) = -hat(gyro - bg_last);       // d(dtheta)/dtheta
+    diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -Eigen::Matrix3d::Identity(); // d(dtheta)/dbg
+    diff_f_diff_x_jacobian.block<3, 3>(6, 3) = -q_last.toRotationMatrix() * hat(acc - ba_last); // dv/dtheta
+    diff_f_diff_x_jacobian.block<3, 3>(6, 12) = -q_last.toRotationMatrix(); // dv/dba
     return diff_f_diff_x_jacobian;
 }
 
-
-
-//! changed by wz
+/// @brief Process-noise Jacobian V mapping IMU noise into the 15D error state.
 MatrixXd diff_f_diff_n(Quaterniond q_last)
 {
     MatrixXd diff_f_diff_n_jacobian(MatrixXd::Zero(errorstateSize, inputSize));
@@ -3206,12 +2908,9 @@ MatrixXd diff_f_diff_n(Quaterniond q_last)
     return diff_f_diff_n_jacobian;
 }
 
-
-//! changed by wz
+/// @brief Odom measurement Jacobian H from 15D error state to 6D pose residual.
 MatrixXd diff_g_diff_x()
 {
- 
-
     MatrixXd diff_g_diff_x_jacobian(MatrixXd::Zero(measurementSize - 1, errorstateSize));
     diff_g_diff_x_jacobian.block<3, 3>(0, 0) = MatrixXd::Identity(3, 3);
     diff_g_diff_x_jacobian.block<3, 3>(3, 3) = MatrixXd::Identity(3, 3);
@@ -3219,7 +2918,7 @@ MatrixXd diff_g_diff_x()
     return diff_g_diff_x_jacobian;
 }
 
-//! changed by wz
+/// @brief Measurement-noise Jacobian for the 6D odom residual.
 MatrixXd diff_g_diff_v()
 {
     MatrixXd diff_g_diff_v_jacobian(MatrixXd::Identity(measurementSize - 1, measurementSize - 1));

@@ -1,4 +1,4 @@
-#include <iostream>
+#include <cmath>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
 using namespace std;
@@ -8,6 +8,7 @@ using namespace Eigen;
 Euler angle defination: zyx
 Rotation matrix: C_body2ned
 **/
+/// @brief Convert ZYX roll-pitch-yaw Euler angles to a quaternion.
 Quaterniond euler2quaternion(Vector3d euler)
 {
   double cr = cos(euler(0)/2);
@@ -25,6 +26,7 @@ Quaterniond euler2quaternion(Vector3d euler)
 }
 
 
+/// @brief Convert a quaternion to a rotation matrix.
 Matrix3d quaternion2mat(Quaterniond q)
 {
   Matrix3d m;
@@ -35,6 +37,7 @@ Matrix3d quaternion2mat(Quaterniond q)
   return m;
 }
 
+/// @brief Convert a rotation matrix to ZYX roll-pitch-yaw Euler angles.
 Vector3d mat2euler(Matrix3d m)
 { 
   double r = atan2(m(2, 1), m(2, 2));
@@ -44,6 +47,7 @@ Vector3d mat2euler(Matrix3d m)
   return rpy;
 }
 
+/// @brief Convert a rotation matrix to a quaternion.
 Quaterniond mat2quaternion(Matrix3d m)
 {
   //return euler2quaternion(mat2euler(m));
@@ -58,6 +62,7 @@ Quaterniond mat2quaternion(Matrix3d m)
 }
 
 //ZYX
+/// @brief Convert ZYX roll-pitch-yaw Euler angles to a rotation matrix.
 Matrix3d euler2mat(Vector3d euler)
 {
   double cr = cos(euler(0));
@@ -73,11 +78,13 @@ Matrix3d euler2mat(Vector3d euler)
   return m;
 }
 
+/// @brief Convert a quaternion to ZYX roll-pitch-yaw Euler angles.
 Vector3d quaternion2euler(Quaterniond q)
 {
   return mat2euler(quaternion2mat(q));
 }
 
+/// @brief Extract yaw from a quaternion using the same ZYX convention as the EKF.
 double quaternion2yaw(Quaterniond q)
 {
   double a = q.w(), b = q.x(), c = q.y(), d = q.z();
@@ -87,14 +94,13 @@ double quaternion2yaw(Quaterniond q)
 
 //Euler motion equation
 //ZYX Euler angles velocity to body frame wx wy wz  w_phi,  w_theta,  w_psi     q: roll pitch yaw  (phi theta psi)
+/// @brief Build the mapping from ZYX Euler-angle rates to body angular velocity.
 Matrix3d w_Euler2Body(Vector3d q)
 {
     double cr = cos( q(0));
     double sr = sin( q(0));
     double cp = cos( q(1));
     double sp = sin( q(1));
-    double cy = cos( q(2));
-    double sy = sin( q(2));
 
     Matrix3d G;
     G << 1.,    0.,       -sp,
@@ -105,14 +111,13 @@ Matrix3d w_Euler2Body(Vector3d q)
     // w = G * qdot;
     return G;
 } 
+/// @brief Build the inverse mapping from body angular velocity to ZYX Euler-angle rates.
 Matrix3d w_Body2Euler(Vector3d q)
 {
     double cr = cos( q(0));
     double sr = sin( q(0));
     double cp = cos( q(1)) + 0.00000001;
     double sp = sin( q(1));
-    double cy = cos( q(2));
-    double sy = sin( q(2));
 
     Matrix3d G_inv;
     G_inv << 1., sp*sr/cp, cr*sp/cp,
@@ -123,17 +128,6 @@ Matrix3d w_Body2Euler(Vector3d q)
     // qdot = G_inv * w;
     return G_inv;
 }
-//ZXY Euler angles velocity to body frame wx wy wz  w_phi,  w_theta,  w_psi
-// Vector3d Euler2Body(Vector3d q, Vector3d qdot)
-// {
-//     Vector3d w(0,0,0);
-//     Matrix3d G;
-//     G << cos(q.y),   0.,  -cos(q.x)*sin(q.y),
-//          0.,         1.,   sin(q.x),
-//          sin(q.y),   0.,   cos(q.x)*cos(q.y);
-//     w = G * qdot;
-//     return w;
-// } 
 // Vector3d Body2Euler(Vector3d q, Vector3d w)
 // {
 //     Vector3d qdot(0,0,0);
