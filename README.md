@@ -95,4 +95,4 @@ Before publishing, choose and add a real open-source license such as MIT, BSD-3-
 
 ## Reproduction Handoff
 
-For a new maintainer or junior student, start from [docs/reproduction.md](docs/reproduction.md). It gives the recommended reading order, the default topic contract, the minimum rosbag replay workflow, and the first checks to run when `/ekf/ekf_odom` has no output or GNSS is not accepted.
+Start reproduction work from [docs/reproduction.md](docs/reproduction.md). It gives the recommended reading order, the default topic contract, the minimum rosbag replay workflow, and the first checks to run when `/ekf/ekf_odom` has no output or GNSS is not accepted.

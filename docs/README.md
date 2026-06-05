@@ -4,7 +4,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [reproduction.md](reproduction.md) | 复现交接说明，适合首次接手项目的同学按步骤运行和排错 |
+| [reproduction.md](reproduction.md) | 复现说明，按环境、topic、运行、检查和排错组织 |
 | [usage.md](usage.md) | 编译运行、topic、参数、bag 数据准备 |
 | [algorithm.md](algorithm.md) | EKF 状态量、输入观测、协方差、GNSS 健康管理、VO/VIO 引导 |
 | [validation_demo.md](validation_demo.md) | 验证指标、RViz 展示流程、预期现象和讲解要点 |
@@ -12,7 +12,7 @@
 
 ## 建议阅读顺序
 
-1. 首次接手和复现项目：先看 [reproduction.md](reproduction.md)。
+1. 首次复现项目：先看 [reproduction.md](reproduction.md)。
 2. 需要改 topic、参数或 bag：再看 [usage.md](usage.md)。
 3. 准备答辩或解释算法：看 [algorithm.md](algorithm.md) 和 [validation_demo.md](validation_demo.md)。
 4. 准备公开仓库或整理材料：看本文档的维护要点。

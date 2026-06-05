@@ -1,6 +1,6 @@
 # 使用说明
 
-本文档汇总项目运行所需的环境、编译、topic、参数和 bag 数据准备。首次接手项目时建议先读 [reproduction.md](reproduction.md)，再回到本文查具体命令和参数。
+本文档汇总项目运行所需的环境、编译、topic、参数和 bag 数据准备。首次复现项目时建议先读 [reproduction.md](reproduction.md)，再回到本文查具体命令和参数。
 
 ## 环境
 
@@ -261,7 +261,7 @@ rosbag play --clock ~/catkin_ws/src/ekf/results/vio_guidance_demo/vio_guidance_n
 
 ## 最小复现检查
 
-完成一次复现至少记录以下信息，便于后续同学判断结果是否可比：
+完成一次复现至少记录以下信息，便于后续维护和结果对比：
 
 | 项目 | 建议记录内容 |
 | --- | --- |
