@@ -33,6 +33,6 @@
 ## 维护要点
 
 - 大型 `*.bag`、生成的图片、Word 文档、临时 benchmark 输出不建议提交到源码仓库。
-- 重要数据可放到 GitHub Releases、Zenodo、网盘或外部数据集仓库，并在文档中说明 topic 和校验信息。
+- 核心复现 bag 已放到 GitHub Release `data-v0.1.0`，并在 [reproduction.md](reproduction.md) 和 [usage.md](usage.md) 中说明下载路径与校验信息。
 - 发布前应确认 `catkin build ekf` 通过，README 命令可运行，默认 launch 能用一个已说明的 demo bag 回放。
 - 仓库代码按 MIT License 发布。公开维护时仍需移除私有路径、凭据、私人数据链接和个人元数据。

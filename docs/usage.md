@@ -250,6 +250,23 @@ rosbag play --clock ~/catkin_ws/src/ekf/results/vio_guidance_demo/vio_guidance_n
 - `/mavros/local_position/odom`: fallback odom candidate
 - `/Odometry`: raw VO/SLAM odom
 
+核心复现 bag 已上传到 GitHub Release：
+
+```text
+https://github.com/zcli0320/ekf_pose/releases/tag/data-v0.1.0
+```
+
+推荐下载到项目默认路径：
+
+```bash
+cd ~/catkin_ws/src/ekf
+curl -L -o all_gps.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/all_gps.bag
+curl -L -o new_data.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/new_data.bag
+curl -L -o gps_fusion.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/gps_fusion.bag
+mkdir -p results/vio_guidance_demo
+curl -L -o results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/vio_guidance_new_data_seg3_synth_gnss.bag
+```
+
 `dataset_tools/` 中包含公开数据集转换和异常注入工具，例如：
 
 - `kari_bag_to_project_bag.py`

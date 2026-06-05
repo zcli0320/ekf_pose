@@ -46,6 +46,17 @@ catkin build ekf
 source ~/catkin_ws/devel/setup.bash
 ```
 
+Download the core reproduction bags:
+
+```bash
+cd ~/catkin_ws/src/ekf
+curl -L -o all_gps.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/all_gps.bag
+curl -L -o new_data.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/new_data.bag
+curl -L -o gps_fusion.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/gps_fusion.bag
+mkdir -p results/vio_guidance_demo
+curl -L -o results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/vio_guidance_new_data_seg3_synth_gnss.bag
+```
+
 Portable builds are the default. Host-specific compiler tuning can be enabled explicitly when needed:
 
 ```bash
@@ -109,7 +120,7 @@ ekf/
 
 ## Notes For Public Releases
 
-Large bags, thesis drafts, generated Word documents, and iterative benchmark sweeps should not be committed to the source repository. Keep them in external archives, GitHub Releases, or dataset repositories, then link them from [docs/README.md](docs/README.md) or [docs/usage.md](docs/usage.md).
+Large bags, thesis drafts, generated Word documents, and iterative benchmark sweeps should not be committed to the source repository. Core reproduction bags are published in the [data-v0.1.0 GitHub Release](https://github.com/zcli0320/ekf_pose/releases/tag/data-v0.1.0).
 
 This repository is released under the MIT License. See [LICENSE](LICENSE).
 

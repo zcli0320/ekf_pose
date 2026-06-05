@@ -88,6 +88,40 @@ source ~/catkin_ws/devel/setup.bash
 catkin build ekf --cmake-args -DEKF_ENABLE_NATIVE_OPTIMIZATION=ON
 ```
 
+## 4. 复现 bag 下载
+
+核心复现 bag 已上传到 GitHub Release：
+
+```text
+https://github.com/zcli0320/ekf_pose/releases/tag/data-v0.1.0
+```
+
+下载到项目默认路径：
+
+```bash
+cd ~/catkin_ws/src/ekf
+curl -L -o all_gps.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/all_gps.bag
+curl -L -o new_data.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/new_data.bag
+curl -L -o gps_fusion.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/gps_fusion.bag
+mkdir -p results/vio_guidance_demo
+curl -L -o results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/vio_guidance_new_data_seg3_synth_gnss.bag
+```
+
+校验信息：
+
+| 文件 | 大小 | SHA256 |
+| --- | ---: | --- |
+| `all_gps.bag` | 92,890,542 bytes | `59350aabe77ee4c21456d4be3e2b5c7754f31a4f00b5c46bcd098c7a681d3d42` |
+| `new_data.bag` | 6,949,781 bytes | `ebec5082fdf43b809886846ae2403042f34960f73870c0df48d1974cdd75f3b8` |
+| `gps_fusion.bag` | 43,824,230 bytes | `a20faada121f85f6ec46c088413f33bf6fcec6525328a7f84cc942eca692bf93` |
+| `results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag` | 1,025,647 bytes | `cc342700d2644984f0c88ee78189a167e0b6dc7d5853129c603291aaa28ad51c` |
+
+下载后可运行：
+
+```bash
+sha256sum all_gps.bag new_data.bag gps_fusion.bag results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag
+```
+
 每个新终端运行 ROS 命令前加载环境：
 
 ```bash
@@ -102,7 +136,7 @@ sudo apt update
 sudo apt install python3-catkin-tools
 ```
 
-## 4. 默认 topic 契约
+## 5. 默认 topic 契约
 
 不要在没有明确理由时重命名以下 topic。需要适配新 bag 时，优先通过 launch 参数 remap。
 
@@ -128,7 +162,7 @@ roslaunch ekf ekf_lidar.launch \
   gnss_topic:=/your/navsatfix
 ```
 
-## 5. 最小运行流程
+## 6. 最小运行流程
 
 终端 1：
 
@@ -162,7 +196,7 @@ rostopic echo -n 1 /ekf/ekf_odom
 - GNSS 质量差或与 odom 不一致时，终端可能出现 `GNSS observation health=WEAK` 或 reject 日志。
 - odom 中断或跳变时，终端可能出现 `Odom observation health=LOST`、`Detected odom jump` 或 `Realigned odom frame`。
 
-## 6. 复现前检查清单
+## 7. 复现前检查清单
 
 运行前先确认：
 
@@ -173,7 +207,7 @@ rostopic echo -n 1 /ekf/ekf_odom
 - 如果 odom topic 不是 `/mavros/odometry/in`，用 `odom_primary_topic:=...` 指定。
 - 如果 odom 是 raw VO/VIO 且 frame、yaw 或尺度与 GNSS 不一致，优先使用 `vo_guided_ekf.launch` 或 `vio_guided_ekf.launch`。
 
-## 7. 关键参数分组
+## 8. 关键参数分组
 
 调参时建议一次只改一组参数，先记录命令再运行，避免无法复盘。
 
@@ -207,7 +241,7 @@ rostopic echo -n 1 /ekf/ekf_odom
 | `enable_gnss_motion_consistency` | 是否检查 GNSS 与 odom 的短时运动一致性 |
 | `enable_gnss_health_score` | 是否融合 covariance、NIS、运动一致性和 status 得到健康分数 |
 
-## 8. 代码阅读顺序
+## 9. 代码阅读顺序
 
 推荐按以下顺序读主节点：
 
@@ -219,7 +253,7 @@ rostopic echo -n 1 /ekf/ekf_odom
 6. `gnss_fix_callback()`：看 GNSS ENU 转换、对齐、健康门控、位置更新和 odom lost 退化。
 7. `system_pub()`：看融合结果如何发布到 `/ekf/ekf_odom` 和 RViz path。
 
-## 9. 常见问题
+## 10. 常见问题
 
 ### `/ekf/ekf_odom` 没有输出
 
@@ -261,7 +295,7 @@ rostopic echo -n 1 /clock
 - EKF 因观测创新过大进行了 reset 或 realign。
 - GNSS cold start 或 odom 重新接入改变了当前 frame 对齐关系。
 
-## 10. 交接维护建议
+## 11. 维护建议
 
 - 保持 `README.md -> docs/README.md -> docs/reproduction.md/docs/usage.md/docs/algorithm.md` 的入口关系。
 - 修改 EKF 逻辑前，先在 `docs/algorithm.md` 中更新状态量、观测量和协方差说明。
