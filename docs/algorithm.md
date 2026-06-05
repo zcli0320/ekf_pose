@@ -37,6 +37,25 @@ dx = [dp, dtheta, dv, dbg, dba]
 
 展示或汇报时可以概括为：IMU 负责连续预测，odom 负责短时稳定，GNSS 负责全局约束，协方差和健康门控决定每类观测被信任的程度。
 
+## 源码对应关系
+
+核心实现集中在 `src/ekf_node_vio_timesync_with_acc_pub.cpp` 和 `include/ekf.h`。阅读或修改前，建议先用下表把算法概念和源码变量对齐。
+
+| 算法概念 | 源码变量/函数 | 说明 |
+| --- | --- | --- |
+| 16 维名义状态 | `X_state` | `[p, q_wxyz, v, bg, ba]`，四元数必须保持单位化 |
+| 15 维误差状态协方差 | `StateCovariance` | `dx=[dp,dtheta,dv,dbg,dba]` 的协方差，不包含 4 维四元数 |
+| IMU 输入噪声 | `Qt` | 6x6，对应 `[gyro, acc]` |
+| odom 观测噪声 | `Rt`、`current_odom_Rt` | 6x6，对应 `[position residual, rotation-vector residual]` |
+| GNSS 观测噪声 | `R_base`、`R_update` | GNSS 位置或位置+速度伪观测的协方差 |
+| IMU 预测 | `imu_callback()`、`propagate_nominal_state()` | 传播名义状态和 `StateCovariance` |
+| odom 更新 | `process_vioodom()`、`update_lastest_state()` | 形成 6 维 pose residual 并执行 EKF 更新 |
+| GNSS 更新 | `gnss_fix_callback()` | ENU 转换、对齐、门控、健康评分和位置更新 |
+| GNSS ENU 原点 | `navsat_to_local_enu()` | 第一帧有效 GNSS 作为局部 ENU 原点 |
+| GNSS/odom 对齐 | `update_gnss_alignment()` | 估计 yaw 和 translation，使 GNSS 落到当前 EKF frame |
+| odom frame 跳变处理 | `realign_odom_frame()`、`reset_filter_to_measurement()` | 优先 realign，必要时 reset |
+| 时间同步回放 | `sys_seq`、`cov_seq`、`search_proper_frame()`、`re_propagate()` | odom 到达时回到相邻 IMU 状态更新，再重放后续 IMU |
+
 ## 预测流程
 
 每收到一帧 IMU，节点根据时间间隔 `dt` 传播：

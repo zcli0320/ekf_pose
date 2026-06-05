@@ -1,6 +1,6 @@
 # 使用说明
 
-本文档汇总项目运行所需的环境、编译、topic、参数和 bag 数据准备。
+本文档汇总项目运行所需的环境、编译、topic、参数和 bag 数据准备。首次接手项目时建议先读 [reproduction.md](reproduction.md)，再回到本文查具体命令和参数。
 
 ## 环境
 
@@ -258,5 +258,27 @@ rosbag play --clock ~/catkin_ws/src/ekf/results/vio_guidance_demo/vio_guidance_n
 - `ctu_mrs_mas_to_project_bag.py`
 - `gnss_smoothed_odom_bag.py`
 - `inject_sensor_anomalies.py`
+
+## 最小复现检查
+
+完成一次复现至少记录以下信息，便于后续同学判断结果是否可比：
+
+| 项目 | 建议记录内容 |
+| --- | --- |
+| 代码版本 | `git rev-parse --short HEAD` |
+| 编译结果 | `catkin build ekf` 是否通过 |
+| bag 来源 | 文件名、时长、核心 topic 和是否使用 `--clock` |
+| launch 命令 | 完整 `roslaunch` 命令和所有覆盖参数 |
+| 输出检查 | `/ekf/ekf_odom` 频率、RViz 轨迹是否连续 |
+| 异常日志 | GNSS reject、odom lost、realign、reset 等关键日志 |
+
+推荐检查命令：
+
+```bash
+git rev-parse --short HEAD
+rosbag info /path/to/your.bag
+rostopic hz /ekf/ekf_odom
+rostopic echo -n 1 /ekf/ekf_odom
+```
 
 大型 bag 不建议提交到源码仓库。公开数据时应说明 topic 列表、来源、校验信息和再发布许可。

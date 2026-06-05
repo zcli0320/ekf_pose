@@ -22,30 +22,26 @@
 
 using namespace std;
 using namespace Eigen;
-// 20200531: time synchronization
-// 20200105: ekf_node_vio.cpp and ekf_node_mocap.cpp merge into one (ekf_node_vio.cpp) and the differences between them is the odom format
-// X_state: p q v gb ab   with time stamp aligned between imu and img
-/*
-    EKF model
-    prediction:
-    xt~ = xt-1 + dt*f(xt-1, ut, 0)
-    sigmat~ = Ft*sigmat-1*Ft' + Vt*Qt*Vt'
-    Update:
-    Kt = sigmat~*Ct'*(Ct*sigmat~*Ct' + Wt*Rt*Wt')^-1
-    xt = xt~ + Kt*(zt - g(xt~,0))
-    sigmat = sigmat~ - Kt*Ct*sigmat~
-*/
-/*
-   -pi ~ pi crossing problem:
-   1. the model propagation: X_state should be limited to [-pi,pi] after predicting and updating
-   2. innovation crossing: (measurement - g(X_state)) should also be limited to [-pi,pi] when getting the innovation.
-   z_measurement is normally in [-pi~pi]
-*/
 
-// imu frame is imu body frame
-
-// odom: pose px,py pz orientation qw qx qy qz
-// imu: acc: x y z gyro: wx wy wz
+// Main data-flow overview for maintainers:
+//   1. IMU callback runs at the highest rate. It rotates/scales raw IMU samples,
+//      propagates the 16D nominal state X=[p,q,v,bg,ba], and propagates the 15D
+//      error-state covariance P.
+//   2. Odom callback is the primary local pose correction. It forms a 6D
+//      residual [dp,dtheta], where dtheta is an SO(3) rotation-vector residual,
+//      then applies the correction through boxplus().
+//   3. GNSS callback is a conservative global position correction. NavSatFix is
+//      converted to local ENU, aligned to the odom/EKF frame, checked by health
+//      gates, and fused as a 3D position update or optional position+velocity
+//      pseudo-update when odom is lost.
+//   4. Time synchronization is handled by replay buffers. The node stores the
+//      state/covariance before each IMU sample; when an odom measurement arrives
+//      with an older stamp, the filter rolls back to the nearest cached IMU
+//      state, updates, and replays the later IMU samples.
+//
+// Keep topic names, frame_id usage, and message types stable unless a launch
+// remap is enough. Downstream reproduction scripts and RViz configs depend on
+// the public ROS interface documented in docs/reproduction.md.
 
 #define POS_DIFF_THRESHOLD (0.8f)
 
@@ -57,13 +53,22 @@ ros::Publisher ekf_arrows_pub;
 ros::Publisher gnss_path_pub;
 ros::Time imu_back_time = ros::Time(0), imu_front_time = ros::Time(0);
 
-// EKF state layout:
-//   Nominal state X_state is 16D: [p(0:2), q_wxyz(3:6), v(7:9), bg(10:12), ba(13:15)].
-//   Error state dx is 15D: [dp(0:2), dtheta(3:5), dv(6:8), dbg(9:11), dba(12:14)].
-//   StateCovariance is the 15x15 covariance of dx, not the 16D quaternion state.
-//   IMU input u is 6D: [gyro(0:2), acc(3:5)] and Qt is the corresponding noise covariance.
-//   Odom pose residual is 6D: [position residual, SO(3) rotation-vector residual];
-//   Z_measurement stores the raw 7D [p, q_wxyz] measurement before the residual is formed.
+// EKF state layout. These indices are part of the implementation contract:
+//   Nominal state X_state is 16D:
+//     p      X_state(0:2)    position in the current world/odom frame
+//     q      X_state(3:6)    quaternion in w,x,y,z order
+//     v      X_state(7:9)    velocity in the world/odom frame
+//     bg     X_state(10:12)  gyro bias
+//     ba     X_state(13:15)  accelerometer bias
+//   Error state dx is 15D:
+//     dp, dtheta, dv, dbg, dba
+//   StateCovariance is the 15x15 covariance of dx. It is intentionally not a
+//   16x16 covariance over [p,q,v,bg,ba], because quaternion perturbations are
+//   represented by the 3D minimal rotation vector dtheta.
+//   IMU input u is 6D [gyro, acc], and Qt is the corresponding process noise.
+//   Odom residual is 6D [position residual, SO(3) rotation-vector residual].
+//   Z_measurement stores the raw 7D odom pose [p,q_wxyz] before the residual is
+//   formed against g_model().
 size_t stateSize;
 size_t errorstateSize;
 size_t measurementSize;
@@ -92,7 +97,9 @@ Matrix3d rotation_imu;
 Quaterniond q_last;
 Vector3d bg_last;
 Vector3d ba_last;
-// Qt imu covariance matrix  smaller believe system(imu) more
+// Static transform and noise parameters loaded from launch/PX4_vio_drone.yaml
+// and launch/ekf_lidar.launch. Smaller Q entries trust IMU propagation more;
+// smaller R entries trust odom observations more.
 double imu_trans_x = 0.0;
 double imu_trans_y = 0.0;
 double imu_trans_z = 0.0;
@@ -115,6 +122,13 @@ double time_odom_tag_now;
 double cutoff_freq = 20;
 double sample_freq = 120;
 int publish_warmup_frames = 0;
+
+// Odom health management:
+//   - odom_jump_threshold detects discontinuities in raw odom.
+//   - innovation thresholds compare aligned odom against EKF prediction.
+//   - adaptive covariance weakens suspicious odom instead of immediately
+//     resetting the filter.
+//   - odom_loss_timeout lets GNSS/IMU degraded mode take over when odom stops.
 double odom_jump_threshold = 2.0;
 double innovation_reject_threshold = 1.0;
 double innovation_reset_threshold = 2.0;
@@ -136,6 +150,13 @@ double gnss_adaptive_reject_threshold = 5.0;
 double gnss_adaptive_max_scale = 25.0;
 int odom_realign_settle_frames = 20;
 double odom_source_switch_grace = 0.5;
+
+// GNSS health management:
+//   GNSS is intentionally conservative. Before fusion, each NavSatFix sample is
+//   converted to ENU, aligned into the EKF frame, checked by NIS/Mahalanobis
+//   gates, compared against odom motion when possible, and finally scaled by a
+//   health score. The default behavior is to down-weight weak GNSS before
+//   rejecting it, except when the observation is clearly inconsistent.
 bool use_gnss = true;
 bool enable_gnss_cold_start = true;
 double gnss_cold_start_delay = 1.0;
@@ -874,6 +895,12 @@ double descending_score(double value, double good_value, double poor_value)
 
 struct SensorHealthMonitor
 {
+    // Sliding-window GNSS NIS state machine:
+    //   HEALTHY    normal covariance.
+    //   DEGRADED   NIS has been high often enough; inflate covariance.
+    //   ISOLATED   severe NIS repeated; reject GNSS for a short isolation time.
+    //   RECOVERING isolation ended; require several normal samples before
+    //              returning to HEALTHY.
     enum State
     {
         HEALTHY = 0,
@@ -1332,6 +1359,15 @@ Vector3d rotation_2_lie_algebra(Matrix3d R)
 }
 
 /// @brief Odom callback core: initialize, align, gate, time-sync update, and replay IMU.
+///
+/// The odom path is deliberately more trusted than GNSS for short-term motion,
+/// but it still passes through jump detection and innovation-based health
+/// scaling. The function has three main branches:
+///   1. First odom sample initializes the EKF pose if GNSS has not already done
+///      a cold start.
+///   2. Future-dated odom samples are queued until the IMU buffer catches up.
+///   3. Normal samples roll back to the nearest cached IMU state, apply the EKF
+///      pose update, then replay the later IMU samples.
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 { // assume that the odom_tag from camera is sychronized with the imus and without delay. !!!
 
@@ -1482,7 +1518,11 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         Z_measurement.segment<4>(3) = odom_pose.segment<4>(3);
 
 
-        // call back to the proper time
+        // Time-sync update:
+        // The measurement is applied at the closest cached IMU timestamp, not
+        // blindly at the latest state. This avoids biasing the filter when
+        // rosbag playback or sensor transport delivers odom after later IMU
+        // samples.
         if (sys_seq.size() == 0 || buffertime_ms > 0)
         {
             update_lastest_state();
@@ -1915,6 +1955,16 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
 }
 
 /// @brief GNSS callback: ENU conversion, alignment, health gating, and position update.
+///
+/// GNSS update order:
+///   1. Convert NavSatFix to local ENU using the first valid GNSS as origin.
+///   2. Align ENU into the current EKF/odom frame with translation and optional
+///      yaw estimated from synchronized GNSS/odom pairs.
+///   3. Build R from NavSatFix covariance plus project-level floors.
+///   4. Run NIS/Mahalanobis, motion consistency, health score, and odom/GNSS
+///      consistency checks.
+///   5. Apply a 3D position EKF update, or a 6D position+velocity pseudo-update
+///      while odom is lost and GNSS velocity support is enabled.
 void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
 {
     if (!use_gnss || msg->status.status < gnss_min_status)
@@ -2354,6 +2404,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                           gnss_reject_count);
     }
 
+    // Default GNSS observation is 3D position. In odom-lost mode the update can
+    // be expanded to [position, velocity] using finite-difference GNSS velocity.
     MatrixXd H_update = H;
     VectorXd innovation_update = innovation;
     MatrixXd R_update = R;
@@ -2508,6 +2560,8 @@ VectorXd boxplus(VectorXd x, VectorXd dx)
 /// @brief ROS node entry point: parameters, subscribers, publishers, and EKF init.
 int main(int argc, char **argv)
 {
+  // Pinning is an optimization for the original test machine. Failure is not
+  // fatal; ROS still runs normally, so keep it as a warning-level startup detail.
   int core_id = 5;
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -2522,6 +2576,9 @@ int main(int argc, char **argv)
   }
     ros::init(argc, argv, "ekf");
     ros::NodeHandle n("~");
+    // Private topic names are remapped by launch/ekf_lidar.launch. Keep the
+    // private names stable so launch files can adapt datasets without source
+    // edits.
     ros::Subscriber s1 = n.subscribe("imu", 1000, imu_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s2 = n.subscribe("bodyodometry_primary", 40, vioodom_primary_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber s3 = n.subscribe("bodyodometry_fallback", 40, vioodom_fallback_callback, ros::TransportHints().tcpNoDelay());
@@ -2536,6 +2593,9 @@ int main(int argc, char **argv)
     ekf_segments_pub = n.advertise<visualization_msgs::MarkerArray>("ekf_segments", 10, true);
     ekf_arrows_pub = n.advertise<visualization_msgs::MarkerArray>("ekf_arrows", 10, true);
 
+    // Parameter loading mirrors launch/ekf_lidar.launch. Defaults above are only
+    // fallbacks; reproducible runs should record the launch command and any
+    // overridden parameters.
     n.getParam("gyro_cov", gyro_cov);
     n.getParam("acc_cov", acc_cov);
     n.getParam("position_cov", position_cov);

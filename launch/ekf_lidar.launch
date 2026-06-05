@@ -77,6 +77,15 @@
     <param name="/use_sim_time" type="bool" value="$(arg use_sim_time)"/>
     
     <node pkg="ekf" type="ekf" name="ekf" output="screen">
+        <!--
+            Public dataset/topic contract:
+            - Keep the private names (~imu, ~bodyodometry_primary, ~gnss_fix)
+              unchanged in C++.
+            - Adapt new bags by overriding the launch args below instead of
+              editing source topic names.
+            - The default output remains /ekf/ekf_odom for downstream scripts,
+              RViz configs, and reproduction notes.
+        -->
         <remap from="~imu" to="$(arg imu_topic)"/>
         <remap from="~bodyodometry_primary" to="$(arg odom_primary_topic)"/>
         <remap from="~bodyodometry_fallback" to="$(arg odom_fallback_topic)"/>
@@ -84,25 +93,24 @@
 
         <remap from="~ekf_odom" to="/ekf/ekf_odom"/>
 
-        <!-- parms -->
+        <!-- Static IMU/extrinsic parameters and gravity scale. -->
         <rosparam file="$(find ekf)/launch/PX4_vio_drone.yaml" command="load" />
 
-        <!-- initial pos offset before pub-->
+        <!-- Output-only position offset applied immediately before publishing /ekf/ekf_odom. -->
         <param name="offset_px" type="double" value="0.0"/> 
         <param name="offset_py" type="double" value="0.0"/> 
         <param name="offset_pz" type="double" value="0.0"/> 
         
-        <!--body in IMU frame-->
+        <!-- Lever-arm from EKF body center to the published IMU/body output point. -->
         <param name="imu_trans_x" type="double" value="0.0"/> 
         <param name="imu_trans_y" type="double" value="0.0"/> 
         <!-- <param name="imu_trans_z" type="double" value="0.0"/>  -->
         <param name="imu_trans_z" type="double" value="0.0"/> 
 
-        <!-- Qt -->
-        <!-- kdkdkd -->
+        <!-- IMU process noise Qt: smaller values trust IMU propagation more. -->
         <param name="gyro_cov" type="double" value="$(arg gyro_cov)"/> 
         <param name="acc_cov" type="double" value="$(arg acc_cov)"/>
-        <!-- Rt -->
+        <!-- Odom pose measurement noise Rt: smaller values trust odom updates more. -->
         <param name="position_cov" type="double" value="$(arg position_cov)"/>
         <param name="q_rp_cov" type="double" value="$(arg q_rp_cov)"/>
         <param name="q_yaw_cov" type="double" value="$(arg q_yaw_cov)"/>
