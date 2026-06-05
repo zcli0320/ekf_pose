@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <package>
   <name>ekf</name>
-  <version>0.0.0</version>
-  <description>The ekf package</description>
-  <maintainer email="ksu@todo.todo">kunyue</maintainer>
-  <license>TODO</license>
+  <version>0.1.0</version>
+  <description>ROS1 Noetic package for EKF-based UAV pose fusion using IMU, odometry, and optional GNSS/MAVROS global position inputs.</description>
+  <maintainer email="zcli0320@users.noreply.github.com">zcli0320</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>roscpp</build_depend>

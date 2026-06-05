@@ -23,13 +23,33 @@ The default runtime is designed for MAVROS-style topics:
 
 ## Quick Start
 
-Build:
+Install workspace tools and clone the repository:
+
+```bash
+source /opt/ros/noetic/setup.bash
+sudo apt update
+sudo apt install -y python3-catkin-tools python3-rosdep
+sudo rosdep init 2>/dev/null || true
+rosdep update
+mkdir -p ~/catkin_ws/src
+cd ~/catkin_ws/src
+git clone https://github.com/zcli0320/ekf_pose.git ekf
+```
+
+Install ROS dependencies and build:
 
 ```bash
 source /opt/ros/noetic/setup.bash
 cd ~/catkin_ws
+rosdep install --from-paths src --ignore-src -r -y
 catkin build ekf
 source ~/catkin_ws/devel/setup.bash
+```
+
+Portable builds are the default. Host-specific compiler tuning can be enabled explicitly when needed:
+
+```bash
+catkin build ekf --cmake-args -DEKF_ENABLE_NATIVE_OPTIMIZATION=ON
 ```
 
 Run the EKF node:
@@ -58,7 +78,7 @@ rostopic hz /ekf/ekf_odom
 ## Documentation
 
 - [文档入口](docs/README.md)
-- [复现交接说明](docs/reproduction.md)：从环境、topic、运行、检查到常见问题的完整复现路径
+- [复现说明](docs/reproduction.md)：从环境、topic、运行、检查到常见问题的完整复现路径
 - [使用说明](docs/usage.md)：编译、launch、topic、参数和 bag 数据准备
 - [算法说明](docs/algorithm.md)：EKF 状态量、观测量、协方差、GNSS 健康管理和 VO/VIO 引导
 - [验证与 RViz 展示](docs/validation_demo.md)：验证指标、RViz 展示流程、预期现象和讲解要点
@@ -91,8 +111,8 @@ ekf/
 
 Large bags, thesis drafts, generated Word documents, and iterative benchmark sweeps should not be committed to the source repository. Keep them in external archives, GitHub Releases, or dataset repositories, then link them from [docs/README.md](docs/README.md) or [docs/usage.md](docs/usage.md).
 
-Before publishing, choose and add a real open-source license such as MIT, BSD-3-Clause, Apache-2.0, or GPL-3.0. Without a license, others do not have clear permission to reuse the code.
+This repository is released under the MIT License. See [LICENSE](LICENSE).
 
-## Reproduction Handoff
+## Reproduction
 
 Start reproduction work from [docs/reproduction.md](docs/reproduction.md). It gives the recommended reading order, the default topic contract, the minimum rosbag replay workflow, and the first checks to run when `/ekf/ekf_odom` has no output or GNSS is not accepted.

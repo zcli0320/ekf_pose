@@ -1,4 +1,4 @@
-# 复现交接说明
+# 复现说明
 
 本文档面向项目复现和维护流程，目标是用最短路径完成环境配置、编译、数据准备、运行、检查和结果复核。文档不假设项目源码已被提前熟悉，但默认复现环境具备 ROS1 Noetic 的基本命令使用条件。
 
@@ -59,11 +59,17 @@ odom pose update          ENU conversion + alignment + GNSS update
 - 工作空间：`~/catkin_ws`
 - 包路径：`~/catkin_ws/src/ekf`
 
-每个终端先加载环境：
+从零准备工作空间并克隆仓库：
 
 ```bash
 source /opt/ros/noetic/setup.bash
-source ~/catkin_ws/devel/setup.bash
+sudo apt update
+sudo apt install -y python3-catkin-tools python3-rosdep
+sudo rosdep init 2>/dev/null || true
+rosdep update
+mkdir -p ~/catkin_ws/src
+cd ~/catkin_ws/src
+git clone https://github.com/zcli0320/ekf_pose.git ekf
 ```
 
 首次编译：
@@ -71,7 +77,21 @@ source ~/catkin_ws/devel/setup.bash
 ```bash
 source /opt/ros/noetic/setup.bash
 cd ~/catkin_ws
+rosdep install --from-paths src --ignore-src -r -y
 catkin build ekf
+source ~/catkin_ws/devel/setup.bash
+```
+
+默认编译不启用 `-march=native`，以保证不同 WSL、虚拟机和服务器上的可移植性。需要使用本机 CPU 指令优化时，显式运行：
+
+```bash
+catkin build ekf --cmake-args -DEKF_ENABLE_NATIVE_OPTIMIZATION=ON
+```
+
+每个新终端运行 ROS 命令前加载环境：
+
+```bash
+source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash
 ```
 
@@ -247,4 +267,4 @@ rostopic echo -n 1 /clock
 - 修改 EKF 逻辑前，先在 `docs/algorithm.md` 中更新状态量、观测量和协方差说明。
 - 修改 launch 默认 topic 前，先确认已有 bag、README 命令和 RViz 配置是否仍可运行。
 - 大型 bag、生成图片、临时 benchmark 结果不要直接提交到源码仓库。
-- 正式开源前需要补充 LICENSE；当前仓库还没有明确授权协议。
+- 仓库代码按 MIT License 发布。维护公开仓库时仍需避免提交私有路径、凭据、私人数据链接和个人元数据。

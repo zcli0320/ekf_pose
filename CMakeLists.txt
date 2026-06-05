@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.0.2)
 project(ekf)
 
 set(CMAKE_BUILD_TYPE "Release")
-set(CMAKE_CXX_FLAGS "-std=c++11 -march=native -DEIGEN_DONT_PARALLELIZE")
+option(EKF_ENABLE_NATIVE_OPTIMIZATION "Enable -march=native for host-specific builds" OFF)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DEIGEN_DONT_PARALLELIZE")
+if(EKF_ENABLE_NATIVE_OPTIMIZATION)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall")
 
 find_package(catkin REQUIRED COMPONENTS
