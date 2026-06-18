@@ -1,0 +1,101 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.25
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 80
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 0.85
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 80; 80
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.045
+      Name: Odom Red
+      Pose Color: 255; 80; 80
+      Pose Style: None
+      Topic: /ekf/input_path
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 70; 255; 120
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.08
+      Name: EKF Green
+      Pose Color: 70; 255; 120
+      Pose Style: None
+      Topic: /ekf/ekf_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 220; 40
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Aligned GNSS Yellow
+      Pose Color: 255; 220; 40
+      Pose Style: None
+      Topic: /ekf/gnss_path
+      Unreliable: false
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 80
+      Enable Stereo Rendering:
+        Value: false
+      Field of View: 0.7853981852531433
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.85
+      Target Frame: <Fixed Frame>
+      Yaw: 4.2
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1000
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Width: 1600
+  X: 120
+  Y: 80
