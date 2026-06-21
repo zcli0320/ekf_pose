@@ -17,6 +17,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <vector>
 // #include <geometry_msgs/Accel.h>
 #include "conversion.h"
 
@@ -42,6 +43,10 @@ using namespace Eigen;
 // Keep topic names, frame_id usage, and message types stable unless a launch
 // remap is enough. Downstream reproduction scripts and RViz configs depend on
 // the public ROS interface documented in docs/reproduction.md.
+//
+// Function-level maintenance notes and mathematical derivations are documented
+// in docs/ekf_node_function_reference.md. Keep that file synchronized whenever
+// adding, removing, or changing functions in this core node.
 
 #define POS_DIFF_THRESHOLD (0.8f)
 
@@ -53,22 +58,45 @@ ros::Publisher ekf_arrows_pub;
 ros::Publisher gnss_path_pub;
 ros::Time imu_back_time = ros::Time(0), imu_front_time = ros::Time(0);
 
-// EKF state layout. These indices are part of the implementation contract:
+// EKF state layout. These offsets are part of the implementation contract.
+//
 //   Nominal state X_state is 16D:
 //     p      X_state(0:2)    position in the current world/odom frame
 //     q      X_state(3:6)    quaternion in w,x,y,z order
 //     v      X_state(7:9)    velocity in the world/odom frame
 //     bg     X_state(10:12)  gyro bias
 //     ba     X_state(13:15)  accelerometer bias
+//
 //   Error state dx is 15D:
-//     dp, dtheta, dv, dbg, dba
+//     dx = [dp, dtheta, dv, dbg, dba]
+//
 //   StateCovariance is the 15x15 covariance of dx. It is intentionally not a
-//   16x16 covariance over [p,q,v,bg,ba], because quaternion perturbations are
-//   represented by the 3D minimal rotation vector dtheta.
+//   16x16 covariance over [p,q,v,bg,ba], because quaternion uncertainty is
+//   represented by the 3D Lie-algebra perturbation dtheta. All pose updates must
+//   therefore apply dx through boxplus(); direct X_state += dx would mix a 3D
+//   attitude error with the 4D quaternion storage and break the unit-norm
+//   constraint.
+//
 //   IMU input u is 6D [gyro, acc], and Qt is the corresponding process noise.
 //   Odom residual is 6D [position residual, SO(3) rotation-vector residual].
-//   Z_measurement stores the raw 7D odom pose [p,q_wxyz] before the residual is
-//   formed against g_model().
+//   GNSS residual is 3D position, optionally expanded to 6D position+velocity
+//   when odom is lost. Z_measurement stores the raw 7D odom pose [p,q_wxyz]
+//   before the residual is formed against g_model().
+constexpr int kStatePositionOffset = 0;
+constexpr int kStateQuaternionOffset = 3;
+constexpr int kStateVelocityOffset = 7;
+constexpr int kStateGyroBiasOffset = 10;
+constexpr int kStateAccelBiasOffset = 13;
+
+constexpr int kErrorPositionOffset = 0;
+constexpr int kErrorRotationOffset = 3;
+constexpr int kErrorVelocityOffset = 6;
+constexpr int kErrorGyroBiasOffset = 9;
+constexpr int kErrorAccelBiasOffset = 12;
+
+constexpr int kResidualPositionOffset = 0;
+constexpr int kResidualRotationOffset = 3;
+
 size_t stateSize;
 size_t errorstateSize;
 size_t measurementSize;
@@ -122,6 +150,16 @@ double time_odom_tag_now;
 double cutoff_freq = 20;
 double sample_freq = 120;
 int publish_warmup_frames = 0;
+bool enable_output_motion_smoothing = true;
+double output_smoothing_natural_freq = 3.0;
+double output_smoothing_damping_ratio = 1.0;
+double output_smoothing_max_accel = 50.0;
+double output_smoothing_max_correction_speed = 20.0;
+double output_smoothing_normal_natural_freq = 3.5;
+double output_smoothing_normal_max_accel = 50.0;
+double output_smoothing_normal_max_correction_speed = 20.0;
+double output_smoothing_release_error = 0.005;
+double output_smoothing_recovery_duration = 0.8;
 
 // Odom health management:
 //   - odom_jump_threshold detects discontinuities in raw odom.
@@ -141,10 +179,18 @@ double odom_adaptive_threshold = 1.5;
 double odom_adaptive_reject_threshold = 4.0;
 double odom_adaptive_max_scale = 100.0;
 double odom_loss_timeout = 1.0;
-bool enable_gnss_velocity_when_odom_lost = true;
+bool enable_odom_recovery_guard = true;
+int odom_recovery_frames = 45;
+double odom_recovery_scale = 1000.0;
+double odom_recovery_min_scale = 1.0;
+bool enable_gnss_velocity_when_odom_lost = false;
 double gnss_velocity_min_dt = 0.05;
 double gnss_velocity_max_dt = 1.5;
 double gnss_velocity_cov = 1.0;
+int gnss_velocity_window_size = 2;
+double gnss_velocity_smoothing_alpha = 1.0;
+double gyro_bias_rw_cov = 0.0;
+double acc_bias_rw_cov = 0.0;
 double gnss_adaptive_threshold = 3.0;
 double gnss_adaptive_reject_threshold = 5.0;
 double gnss_adaptive_max_scale = 25.0;
@@ -203,11 +249,19 @@ double odom_gnss_consistency_timeout = 2.0;
 bool enable_gnss_yaw_alignment = true;
 bool gnss_require_yaw_alignment_before_update = true;
 int gnss_alignment_min_samples = 5;
-int gnss_alignment_max_samples = 30;
-double gnss_alignment_min_motion = 3.0;
+int gnss_alignment_max_samples = 120;
+double gnss_alignment_min_motion = 20.0;
 double gnss_alignment_sample_interval = 0.5;
 double gnss_odom_sync_max_dt = 0.2;
-double gnss_alignment_max_residual = 1.0;
+double gnss_alignment_max_residual = 3.0;
+bool enable_gnss_alignment_refinement = true;
+int gnss_alignment_refinement_min_samples = 20;
+int gnss_alignment_refinement_max_samples = 60;
+double gnss_alignment_refinement_min_motion = 12.0;
+double gnss_alignment_refinement_max_residual = 2.0;
+double gnss_alignment_refinement_gain = 0.35;
+double gnss_alignment_refinement_max_yaw_step = 0.35;
+double gnss_alignment_refinement_max_translation_step = 5.0;
 int gnss_min_status = 0;
 int path_publish_stride = 5;
 int path_max_points = 2000;
@@ -221,6 +275,7 @@ Vector3d last_accepted_gnss_position = Vector3d::Zero();
 double last_accepted_gnss_position_time = -1.0;
 bool last_accepted_gnss_velocity_initialized = false;
 Vector3d last_accepted_gnss_velocity = Vector3d::Zero();
+std::deque<std::pair<double, Vector3d>> accepted_gnss_history;
 std::deque<nav_msgs::Odometry::ConstPtr> pending_odom_measurements;
 const size_t max_pending_odom_measurements = 200;
 
@@ -230,6 +285,8 @@ bool odom_is_lost_at(double stamp_sec);
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg);
 /// @brief Forward declaration for draining future-dated odom measurements.
 void drain_pending_odom_measurements();
+/// @brief Forward declaration for output smoother reset used by state resets.
+void reset_output_motion_smoother();
 
 /// @brief Normalize the quaternion part of the nominal state X=[p,q,v,bg,ba].
 void normalize_state_quaternion(VectorXd &state)
@@ -267,6 +324,20 @@ void symmetrize_covariance(MatrixXd &covariance)
     covariance = 0.5 * (covariance + covariance.transpose());
 }
 
+/// @brief Add bias random-walk process noise to the 15D error covariance.
+void apply_bias_random_walk_covariance(double propagation_dt)
+{
+    if (propagation_dt <= 0.0)
+    {
+        return;
+    }
+    StateCovariance.block<3, 3>(kErrorGyroBiasOffset, kErrorGyroBiasOffset) +=
+        Matrix3d::Identity() * std::max(0.0, gyro_bias_rw_cov) * propagation_dt;
+    StateCovariance.block<3, 3>(kErrorAccelBiasOffset, kErrorAccelBiasOffset) +=
+        Matrix3d::Identity() * std::max(0.0, acc_bias_rw_cov) * propagation_dt;
+    symmetrize_covariance(StateCovariance);
+}
+
 /// @brief Apply Joseph-form covariance update for a 15D error-state EKF.
 void joseph_covariance_update(const MatrixXd &H, const MatrixXd &K, const MatrixXd &R)
 {
@@ -286,6 +357,10 @@ double dt_0_rp; // the dt for the first frame in repropagation
 /// @brief Cache the pre-propagation state, IMU sample, and covariance for time-sync replay.
 void seq_keep(const sensor_msgs::Imu::ConstPtr &imu_msg)
 {
+    // 缓存的是“本帧 IMU 传播之前”的 X/P，以及这帧 IMU 测量本身。
+    // 当较低频的 odom 延迟到达时，可以把队首移动到离 odom 时间最近的
+    // IMU 帧，先用缓存的 X/P 做观测更新，再重放后续 IMU。这样比直接在
+    // 最新状态上融合延迟 odom 更接近传感器真实时间顺序。
     static const size_t kMaxImuReplayBufferSize = 100;
     if (sys_seq.size() < kMaxImuReplayBufferSize)
     {
@@ -307,6 +382,10 @@ void seq_keep(const sensor_msgs::Imu::ConstPtr &imu_msg)
 /// @brief Find the IMU buffer frame closest to an odom timestamp before an update.
 bool search_proper_frame(double odom_time)
 {
+    // 目标：选择与 odom_time 最近的缓存 IMU 帧，并丢弃更早的缓存。
+    // 函数返回值只表示 odom_time 是否落在当前缓存时间范围内；即使返回
+    // false，rightframe 仍会被夹到首帧或末帧，调用者可退化为 latest-state
+    // update 或按边界帧处理。
     if (sys_seq.size() == 0)
     {
         ROS_ERROR("sys_seq.size() == 0. if appear this error, should check the code");
@@ -314,7 +393,7 @@ bool search_proper_frame(double odom_time)
     }
     if (sys_seq.size() == 1)
     {
-        ROS_ERROR("sys_seq.size() == 0. if appear this error, should check the code");
+        ROS_ERROR("sys_seq.size() == 1. at least two IMU samples are needed for interpolation/replay");
         return false;
     }
 
@@ -383,6 +462,15 @@ bool search_proper_frame(double odom_time)
 /// @brief Replay cached IMU samples after a delayed odom update to return to the latest time.
 void re_propagate()
 {
+    // 这里的 sys_seq[0] 已经在 process_vioodom() 中被回退并完成了一次
+    // odom 观测更新。后面的样本是“观测时间之后、当前 IMU 时间之前”的
+    // IMU 输入。逐帧重放它们，可以把刚刚修正过的状态重新推进到最新时刻。
+    //
+    // 注意：
+    //   1. 重放时使用每一帧缓存的 IMU 测量和相邻时间戳计算 dt。
+    //   2. P 的传播仍然是误差状态协方差传播：P = F P F^T + V Q V^T。
+    //   3. 如果 bag 或传输导致时间戳乱序，dt <= 0 的片段会被跳过，避免
+    //      负时间传播污染状态。
     for (size_t i = 1; i < sys_seq.size(); i++)
     {
         // re-prediction for the rightframe
@@ -418,13 +506,15 @@ void re_propagate()
         X_state = propagate_nominal_state(X_state, u_gyro, u_acc, dt);
 
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
-        symmetrize_covariance(StateCovariance);
+        apply_bias_random_walk_covariance(dt);
     }
 }
 /// @brief IMU callback: rotate/scale-correct raw IMU, propagate nominal state and covariance.
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    // Apply static IMU axis rotation and gravity scale before propagation.
+    // IMU 原始坐标轴和 EKF 使用的 body/world 约定可能不同，因此先应用
+    // launch/PX4_vio_drone.yaml 中的 rotation_imu。scale_g 用于修正加速度
+    // 量纲/重力标定偏差。完成这一步后，u_gyro/u_acc 才能进入预测模型。
     sensor_msgs::Imu::Ptr new_msg(new sensor_msgs::Imu(*msg));
     Eigen::Vector3d temp1, temp2;
 
@@ -495,6 +585,9 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             bg_last = X_state.segment<3>(10);
             ba_last = X_state.segment<3>(13);
 
+            // 离散化的一阶误差状态传播：
+            //   dx_k ~= (I + dt * F) dx_{k-1} + dt * V n
+            // 其中 F 来自 diff_f_diff_x()，V 来自 diff_f_diff_n()。
             Ft = MatrixXd::Identity(errorstateSize, errorstateSize) + dt * diff_f_diff_x(q_last, u_gyro, u_acc, bg_last, ba_last);
 
             Vt = dt * diff_f_diff_n(q_last);
@@ -504,6 +597,10 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
             X_state = propagate_nominal_state(X_state, u_gyro, u_acc, dt);
             if (odom_lost_for_prediction)
             {
+                // odom 丢失时，纯 IMU 积分会快速漂移。若 GNSS 已提供可信的
+                // 近似速度，则用该速度约束位置/速度预测，保证退化模式下输出
+                // 仍具有连续性。真正的 GNSS 观测更新仍在 gnss_fix_callback()
+                // 中完成。
                 X_state.segment<3>(0) =
                     position_before_prediction + last_accepted_gnss_velocity * dt;
                 X_state.segment<3>(7) = last_accepted_gnss_velocity;
@@ -511,7 +608,7 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
            
 
             StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
-            symmetrize_covariance(StateCovariance);
+            apply_bias_random_walk_covariance(dt);
 
             time_last = time_now;
 
@@ -539,6 +636,9 @@ nav_msgs::Path measurement_path_msg;
 nav_msgs::Path gnss_path_msg;
 bool output_filter_initialized = false;
 Vector3d output_filter_state = Vector3d::Zero();
+Vector3d output_filter_velocity = Vector3d::Zero();
+double last_output_filter_time = -1.0;
+double output_smoothing_recovery_until = -1.0;
 int input_path_counter = 0;
 int ekf_path_counter = 0;
 int measurement_path_counter = 0;
@@ -558,6 +658,7 @@ Matrix3d odom_alignment_R = Matrix3d::Identity();
 Vector3d odom_alignment_t = Vector3d::Zero();
 int odom_realign_count = 0;
 int odom_realign_settle_count = 0;
+int odom_recovery_frames_remaining = 0;
 int odom_update_count = 0;
 int odom_weak_count = 0;
 int odom_lost_count = 0;
@@ -794,6 +895,12 @@ double yaw_from_quaternion(const Quaterniond &q_in)
                       1.0 - 2.0 * (q.y() * q.y() + q.z() * q.z()));
 }
 
+/// @brief Wrap an angle into [-pi, pi] for bounded yaw updates.
+double normalize_yaw_angle(double angle)
+{
+    return std::atan2(std::sin(angle), std::cos(angle));
+}
+
 /// @brief Build a pure-Z yaw rotation matrix for 2D frame alignment.
 Matrix3d yaw_rotation(double yaw)
 {
@@ -879,6 +986,21 @@ double clamp01(double value)
     return std::max(0.0, std::min(1.0, value));
 }
 
+/// @brief Clamp a vector magnitude while preserving its direction.
+Vector3d clamp_vector_norm(const Vector3d &value, double max_norm)
+{
+    if (max_norm <= 0.0)
+    {
+        return value;
+    }
+    const double norm = value.norm();
+    if (norm <= max_norm || norm <= 1.0e-12)
+    {
+        return value;
+    }
+    return value * (max_norm / norm);
+}
+
 /// @brief Convert a metric where lower is better into a descending health score.
 double descending_score(double value, double good_value, double poor_value)
 {
@@ -891,6 +1013,102 @@ double descending_score(double value, double good_value, double poor_value)
         return 0.0;
     }
     return 1.0 - (value - good_value) / std::max(1.0e-6, poor_value - good_value);
+}
+
+/// @brief Store accepted GNSS positions for windowed velocity estimation.
+void push_accepted_gnss_sample(double stamp, const Vector3d &position)
+{
+    if (!accepted_gnss_history.empty() && stamp <= accepted_gnss_history.back().first)
+    {
+        accepted_gnss_history.clear();
+    }
+    accepted_gnss_history.push_back(std::make_pair(stamp, position));
+    const size_t max_samples = static_cast<size_t>(std::max(2, gnss_velocity_window_size));
+    while (accepted_gnss_history.size() > max_samples)
+    {
+        accepted_gnss_history.pop_front();
+    }
+}
+
+/// @brief Estimate GNSS velocity by fitting a line over the recent accepted GNSS window.
+bool estimate_gnss_window_velocity(double stamp, const Vector3d &position, Vector3d &velocity, double &window_dt)
+{
+    std::vector<std::pair<double, Vector3d>> samples;
+    const size_t max_samples = static_cast<size_t>(std::max(2, gnss_velocity_window_size));
+    for (auto it = accepted_gnss_history.rbegin(); it != accepted_gnss_history.rend() && samples.size() + 1 < max_samples; ++it)
+    {
+        const double age = stamp - it->first;
+        if (age < -1.0e-9)
+        {
+            continue;
+        }
+        if (age > gnss_velocity_max_dt * std::max(1, gnss_velocity_window_size - 1))
+        {
+            break;
+        }
+        samples.push_back(*it);
+    }
+    samples.push_back(std::make_pair(stamp, position));
+    if (samples.size() < 2)
+    {
+        return false;
+    }
+
+    double min_time = samples.front().first;
+    double max_time = samples.front().first;
+    double mean_time = 0.0;
+    Vector3d mean_position = Vector3d::Zero();
+    for (const auto &sample : samples)
+    {
+        min_time = std::min(min_time, sample.first);
+        max_time = std::max(max_time, sample.first);
+        mean_time += sample.first;
+        mean_position += sample.second;
+    }
+    mean_time /= static_cast<double>(samples.size());
+    mean_position /= static_cast<double>(samples.size());
+    window_dt = max_time - min_time;
+    if (window_dt < gnss_velocity_min_dt)
+    {
+        return false;
+    }
+
+    double denominator = 0.0;
+    Vector3d numerator = Vector3d::Zero();
+    for (const auto &sample : samples)
+    {
+        const double centered_time = sample.first - mean_time;
+        denominator += centered_time * centered_time;
+        numerator += centered_time * (sample.second - mean_position);
+    }
+    if (denominator <= 1.0e-9)
+    {
+        return false;
+    }
+    velocity = numerator / denominator;
+    return true;
+}
+
+/// @brief Update the low-pass filtered GNSS velocity reference used during odom loss.
+bool update_smoothed_gnss_velocity(double stamp, const Vector3d &position, Vector3d &velocity, double &window_dt)
+{
+    Vector3d raw_velocity = Vector3d::Zero();
+    if (!estimate_gnss_window_velocity(stamp, position, raw_velocity, window_dt))
+    {
+        return false;
+    }
+    const double alpha = std::max(0.0, std::min(1.0, gnss_velocity_smoothing_alpha));
+    if (last_accepted_gnss_velocity_initialized)
+    {
+        last_accepted_gnss_velocity = alpha * raw_velocity + (1.0 - alpha) * last_accepted_gnss_velocity;
+    }
+    else
+    {
+        last_accepted_gnss_velocity = raw_velocity;
+        last_accepted_gnss_velocity_initialized = true;
+    }
+    velocity = last_accepted_gnss_velocity;
+    return true;
 }
 
 struct SensorHealthMonitor
@@ -1049,6 +1267,56 @@ struct SensorHealthMonitor
 
 SensorHealthMonitor gnss_nis_monitor;
 
+/// @brief Whether odom has reappeared after being LOST and should be trusted slowly.
+bool odom_recovery_active()
+{
+    return enable_odom_recovery_guard && odom_recovery_frames_remaining > 0;
+}
+
+/// @brief Whether the output smoother should still protect a recent odom recovery.
+bool output_smoothing_recovery_output_active(double stamp_sec)
+{
+    return output_smoothing_recovery_duration > 0.0 &&
+           output_smoothing_recovery_until > 0.0 &&
+           stamp_sec <= output_smoothing_recovery_until;
+}
+
+/// @brief Return the current odom recovery covariance scale with smooth decay.
+double odom_recovery_scale_for_current_frame()
+{
+    if (!odom_recovery_active())
+    {
+        return 1.0;
+    }
+    const int total = std::max(1, odom_recovery_frames);
+    const double progress = static_cast<double>(odom_recovery_frames_remaining - 1) /
+                            static_cast<double>(total);
+    const double high = std::max(odom_recovery_min_scale, odom_recovery_scale);
+    return odom_recovery_min_scale + progress * progress * (high - odom_recovery_min_scale);
+}
+
+/// @brief Start a short covariance-inflation window after odom recovers from LOST.
+void start_odom_recovery_guard(const ros::Time &stamp, double raw_step)
+{
+    if (!enable_odom_recovery_guard)
+    {
+        return;
+    }
+    odom_recovery_frames_remaining =
+        std::max(odom_recovery_frames_remaining, std::max(1, odom_recovery_frames));
+    if (output_smoothing_recovery_duration > 0.0)
+    {
+        output_smoothing_recovery_until =
+            std::max(output_smoothing_recovery_until,
+                     stamp.toSec() + output_smoothing_recovery_duration);
+    }
+    ROS_WARN("Odom recovery guard active after LOST at %.3f s: raw_step %.3f m, guarded_frames=%d scale>=%.1f",
+             stamp.toSec(),
+             raw_step,
+             odom_recovery_frames_remaining,
+             odom_recovery_scale);
+}
+
 /// @brief Fuse covariance, NIS, motion, and status scores into one GNSS health score.
 double gnss_health_score_from_factors(double covariance_score,
                                       double nis_score,
@@ -1082,12 +1350,17 @@ double odom_health_scale(double innovation_norm, double stamp_sec)
         scale = std::max(scale, odom_adaptive_max_scale);
         odom_realign_settle_count--;
     }
+    if (odom_recovery_active())
+    {
+        scale = std::max(scale, odom_recovery_scale_for_current_frame());
+        odom_recovery_frames_remaining--;
+    }
     odom_update_count++;
     if (scale > 1.0)
     {
         odom_weak_count++;
         ROS_WARN_THROTTLE(1.0,
-                          "Odom observation health=WEAK innovation %.3f m scale %.2f gnss_score %.2f odom_gnss_score %.2f odom_gnss_scale %.2f updates=%d weak=%d realign=%d settle_left=%d",
+                          "Odom observation health=WEAK innovation %.3f m scale %.2f gnss_score %.2f odom_gnss_score %.2f odom_gnss_scale %.2f updates=%d weak=%d realign=%d settle_left=%d recovery_left=%d",
                           innovation_norm,
                           scale,
                           last_gnss_health_score,
@@ -1096,7 +1369,8 @@ double odom_health_scale(double innovation_norm, double stamp_sec)
                           odom_update_count,
                           odom_weak_count,
                           odom_realign_count,
-                          odom_realign_settle_count);
+                          odom_realign_settle_count,
+                          odom_recovery_frames_remaining);
     }
     else
     {
@@ -1192,10 +1466,11 @@ void reset_filter_to_measurement(const VectorXd &odom_pose, const ros::Time &sta
     last_gnss_motion_reference_initialized = false;
     last_accepted_gnss_position_initialized = false;
     last_accepted_gnss_velocity_initialized = false;
+    accepted_gnss_history.clear();
     gnss_nis_monitor.reset();
     ekf_path_msg.poses.clear();
     ekf_path_counter = 0;
-    output_filter_initialized = false;
+    reset_output_motion_smoother();
     start_new_ekf_segment(world_frame_id, stamp);
 }
 
@@ -1283,6 +1558,57 @@ MatrixXd odom_measurement_covariance_from_msg(const nav_msgs::Odometry::ConstPtr
     return R;
 }
 
+struct OdomPoseResidual
+{
+    VectorXd innovation;
+    double position_norm;
+    double rotation_norm;
+};
+
+/// @brief Build the 6D odom residual used by both latest-state and replayed updates.
+///
+/// z_measurement and predicted_measurement are both stored as 7D pose vectors
+/// [px, py, pz, qw, qx, qy, qz]. The Kalman residual, however, must be 6D:
+///   - first 3 rows: direct position difference z_p - p
+///   - last 3 rows: SO(3) logarithm of q_pred.inverse() * q_meas
+///
+/// The quaternion residual is expressed in the same 3D minimal attitude-error
+/// coordinates as dx(dtheta). This keeps H = diff_g_diff_x() simple and makes
+/// the later boxplus() correction mathematically consistent with the 15D error
+/// covariance.
+OdomPoseResidual build_odom_pose_residual(const VectorXd &z_measurement,
+                                          const VectorXd &predicted_measurement)
+{
+    OdomPoseResidual residual;
+    residual.innovation = VectorXd::Zero(measurementSize - 1);
+    residual.innovation.segment<3>(kResidualPositionOffset) =
+        z_measurement.segment<3>(kStatePositionOffset) -
+        predicted_measurement.segment<3>(kStatePositionOffset);
+
+    Quaterniond q_pred(predicted_measurement(kStateQuaternionOffset),
+                       predicted_measurement(kStateQuaternionOffset + 1),
+                       predicted_measurement(kStateQuaternionOffset + 2),
+                       predicted_measurement(kStateQuaternionOffset + 3));
+    q_pred.normalize();
+
+    Quaterniond q_meas(z_measurement(kStateQuaternionOffset),
+                       z_measurement(kStateQuaternionOffset + 1),
+                       z_measurement(kStateQuaternionOffset + 2),
+                       z_measurement(kStateQuaternionOffset + 3));
+    q_meas.normalize();
+
+    Quaterniond error_q = q_pred.inverse() * q_meas;
+    error_q.normalize();
+    residual.innovation.segment<3>(kResidualRotationOffset) =
+        rotation_2_lie_algebra(error_q.toRotationMatrix());
+
+    residual.position_norm =
+        residual.innovation.segment<3>(kResidualPositionOffset).norm();
+    residual.rotation_norm =
+        residual.innovation.segment<3>(kResidualRotationOffset).norm();
+    return residual;
+}
+
 /// @brief Apply an odom update directly to the latest EKF state without IMU replay.
 ///
 /// This is not a dead path: process_vioodom() calls it when the odom stamp is
@@ -1294,25 +1620,16 @@ void update_lastest_state()
 {
     MatrixXd Ct;
     MatrixXd Wt;
+    // H maps the 15D error state dx into the 6D odom residual. W is currently
+    // identity, but keeping it explicit makes the measurement equation
+    // residual = H * dx + W * v easy to compare with standard EKF notation.
     Ct = diff_g_diff_x();
-    // cout << "Ct: " << Ct << endl;
     Wt = diff_g_diff_v();
-    // cout << "Wt: " << Wt << endl;
 
     VectorXd gg = g_model();
-    // VectorXd innovation = Z_measurement - gg;
-    // VectorXd innovation_t = gg;
-    VectorXd innovation = VectorXd::Zero(6);
-    innovation.segment<3>(0) = Z_measurement.segment<3>(0) - gg.segment<3>(0);
-    Quaterniond q_gg(gg(3), gg(4), gg(5), gg(6));
-    q_gg.normalize();
-    Quaterniond q_Z_measurement(Z_measurement(3), Z_measurement(4), Z_measurement(5), Z_measurement(6));
-    q_Z_measurement.normalize();
-    Quaterniond error_q = q_gg.inverse() * q_Z_measurement;
-    error_q.normalize();
-    innovation.segment<3>(3) = rotation_2_lie_algebra(error_q.toRotationMatrix());
-    // Prevent innovation changing suddenly when euler from -Pi to Pi
-    float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
+    const OdomPoseResidual residual = build_odom_pose_residual(Z_measurement, gg);
+    const VectorXd &innovation = residual.innovation;
+    const double pos_diff = residual.position_norm;
     if (pos_diff > POS_DIFF_THRESHOLD)
     {
         ROS_WARN_THROTTLE(5.0,
@@ -1321,24 +1638,35 @@ void update_lastest_state()
                           pos_diff);
         // return;
     }
+
+    // Innovation health is converted into a covariance scale, not directly into
+    // a state reset. Large residuals therefore reduce trust in this odom sample
+    // while preserving the IMU-predicted state continuity.
     const double odom_scale = odom_health_scale(pos_diff, time_odom_tag_now);
     const MatrixXd R_odom = odom_scale * Wt * current_odom_Rt * Wt.transpose();
     Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom).inverse();
 
-    // X_state += Kt_kalmanGain * (innovation);
+    // The Kalman correction is a 15D error-state increment. boxplus() applies
+    // position/velocity/bias additively and composes the 3D rotation increment
+    // onto the stored unit quaternion.
     X_state = boxplus(X_state, Kt_kalmanGain * (innovation));
 
     joseph_covariance_update(Ct, Kt_kalmanGain, R_odom);
-
-    // ROS_INFO("time cost: %f\n", (clock() - t) / CLOCKS_PER_SEC);
-    // cout << "z " << Z_measurement(2) << " k " << Kt_kalmanGain(2) << " inn " << innovation(2) << endl;
 }
 /// @brief Convert a rotation matrix residual into a 3D Lie-algebra error vector.
 Vector3d rotation_2_lie_algebra(Matrix3d R)
 {
 
     Eigen::Vector3d omega;
-    double theta = std::acos((R.trace() - 1) / 2);
+    // SO(3) logarithm:
+    //   theta = acos((trace(R)-1)/2)
+    //   omega = theta / (2 sin(theta)) * vee(R - R^T)
+    //
+    // Floating-point roundoff can push (trace(R)-1)/2 slightly outside
+    // [-1, 1], so clamp before acos. Without the clamp, near-identity residuals
+    // can become NaN and poison the Kalman update.
+    const double cos_theta = std::max(-1.0, std::min(1.0, (R.trace() - 1.0) / 2.0));
+    double theta = std::acos(cos_theta);
 
     if (theta < 1e-6)
     {
@@ -1371,6 +1699,9 @@ Vector3d rotation_2_lie_algebra(Matrix3d R)
 void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
 { // assume that the odom_tag from camera is sychronized with the imus and without delay. !!!
 
+    // current_odom_Rt 是本帧 odom 的 6x6 观测协方差。默认来自参数 Rt；
+    // 如果 odom_use_msg_covariance=true 且消息携带有效 covariance，则使用
+    // 消息中的对角项并施加最小方差下限。
     current_odom_Rt = odom_measurement_covariance_from_msg(msg);
     double buffertime_ms = (imu_front_time - msg->header.stamp).toSec() * 1000;
     if (buffertime_ms > 0)
@@ -1384,6 +1715,11 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
     static Eigen::Vector3d last_pos(0, 0, 0);
     if (first_frame_tag_odom || !odom_ever_initialized)
     { // system begins in first odom frame
+        // 初始化分两种情况：
+        //   1. 常规启动：第一帧 odom 直接给 EKF 初始 p/q/v。
+        //   2. GNSS cold start 已经初始化：第一帧 odom 不覆盖 EKF，而是估计
+        //      odom frame 到当前 EKF/world frame 的 yaw+translation 对齐。
+        // 这样可以保持 world_frame_id 和已有 GNSS 初始化结果一致。
         const bool initialize_filter_from_odom = first_frame_tag_odom;
         first_frame_tag_odom = false;
         time_odom_tag_now = msg->header.stamp.toSec();
@@ -1454,6 +1790,9 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         //  << "\033[0m" << endl;
         if (sys_seq.empty() || msg->header.stamp > imu_back_time + ros::Duration(1.0e-4))
         {
+            // odom 时间比当前 IMU 缓存末尾还新，说明 IMU 还没有推进到这帧
+            // odom 的时间。先排队，等 imu_callback() 收到足够新的 IMU 后再
+            // drain_pending_odom_measurements()，避免“未来观测”提前修正状态。
             pending_odom_measurements.push_back(msg);
             while (pending_odom_measurements.size() > max_pending_odom_measurements)
             {
@@ -1470,20 +1809,31 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
                               wait_ms);
             return;
         }
+        const bool odom_lost_before_update = enable_odom_recovery_guard &&
+                                             odom_is_lost_at(msg->header.stamp.toSec());
         double odom_step = (last_pos - Vector3d(msg->pose.pose.position.x,
                                                 msg->pose.pose.position.y,
                                                 msg->pose.pose.position.z))
                                .norm();
-        if (odom_step > odom_jump_threshold)
+        if (odom_lost_before_update)
+        {
+            start_odom_recovery_guard(msg->header.stamp, odom_step);
+        }
+        if (odom_step > odom_jump_threshold && !odom_lost_before_update)
         {
             ROS_WARN("Detected odom jump %.3f m at %.3f s", odom_step, msg->header.stamp.toSec());
             VectorXd raw_odom_pose = get_pose_from_VIOodom(msg);
             if (enable_odom_realign && odom_measurement_position_initialized)
             {
+                // 优先重新估计 odom frame 对齐，而不是立刻 reset EKF。这样可以
+                // 处理 VIO/VO relocalization 导致的 frame 跳变，同时保留 IMU
+                // 和 GNSS 已经积累的状态连续性。
                 realign_odom_frame(raw_odom_pose, msg->header.stamp, odom_step);
             }
             else
             {
+                // 如果无法对齐，只能把滤波器拉回当前 odom 观测。该路径会清空
+                // IMU replay buffer，后续从新的参考状态继续。
                 VectorXd odom_pose = apply_odom_alignment(raw_odom_pose);
                 reset_filter_to_measurement(odom_pose, msg->header.stamp, "odom jump");
                 last_pos(0) = msg->pose.pose.position.x;
@@ -1543,7 +1893,12 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         MatrixXd Ct;
         MatrixXd Wt;
 
-        // re-prediction for the rightframe
+        // 从缓存的边界状态开始做“局部重算”：
+        //   sys_seq[0].first / cov_seq[0] 是 odom 时间附近的传播前 X/P；
+        //   sys_seq[0].second 是该时刻对应的 IMU 输入；
+        //   dt_0_rp 是这次局部预测使用的第一段 dt。
+        // 先预测到 odom 可融合的时刻，再做观测更新，最后 re_propagate()
+        // 重放剩余 IMU。
         dt = dt_0_rp;
 
         u_gyro(0) = sys_seq[0].second.angular_velocity.x;
@@ -1583,11 +1938,13 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         //   << X_state << std::endl;
 
         StateCovariance = Ft * StateCovariance * Ft.transpose() + Vt * Qt * Vt.transpose();
-        symmetrize_covariance(StateCovariance);
+        apply_bias_random_walk_covariance(dt);
         // std::cout << "StateCovariance" << std::endl
         //           << StateCovariance << std::endl;
 
-        // re-update for the rightframe
+        // 在回退/局部预测后的状态上执行 odom 观测更新。Ct/H 的非零块只在
+        // dp 和 dtheta 上，因为 odom 只直接观测 pose；v/bg/ba 通过 P 的
+        // 交叉协方差被间接修正。
         Ct = diff_g_diff_x();
         // std::cout << "Ct" << std::endl
         //           << Ct << std::endl;
@@ -1597,34 +1954,9 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
         //           << Wt << std::endl;
 
         VectorXd gg = g_model();
-        // std::cout << "gg" << std::endl
-        //           << gg << std::endl;
-        // std::cout << "Z_measurement" << std::endl
-        //           << Z_measurement << std::endl;
-        // VectorXd innovation = Z_measurement - gg;
-        VectorXd innovation = VectorXd::Zero(6);
-        innovation.segment<3>(0) = Z_measurement.segment<3>(0) - gg.segment<3>(0);
-        // std::cout << "innovation_first" << std::endl
-        //           << innovation << std::endl;
-        Quaterniond q_gg(gg(3), gg(4), gg(5), gg(6));
-        q_gg.normalize();
-        Quaterniond q_Z_measurement(Z_measurement(3), Z_measurement(4), Z_measurement(5), Z_measurement(6));
-        q_Z_measurement.normalize();
-        // Quaterniond error_q = q_Z_measurement * q_gg.inverse();
-        Quaterniond error_q = q_gg.inverse() * q_Z_measurement;
-        error_q.normalize();
-        // cout << "error_q.vec()" << endl
-        //      << error_q.vec() << endl;
-        Matrix3d error_R = error_q.toRotationMatrix();
-        // 旋转矩阵李代数
-        innovation.segment<3>(3) = rotation_2_lie_algebra(error_R);
-        // std::cout << "innovation" << std::endl
-        //           << innovation << std::endl;
-        // std::cout << "\033[1;32m innovation" << std::endl
-        //           << innovation << "\033[0m" << std::endl;
-        // std::cout << "\033[1;33m position diff: " << sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2)) << std::endl;
-        // std::cout << "angle diff: " << sqrt(innovation(3) * innovation(3) + innovation(4) * innovation(4) + innovation(5) * innovation(5)) << "\033[0m" << std::endl;
-        float pos_diff = sqrt(innovation(0) * innovation(0) + innovation(1) * innovation(1) + innovation(2) * innovation(2));
+        const OdomPoseResidual residual = build_odom_pose_residual(Z_measurement, gg);
+        const VectorXd &innovation = residual.innovation;
+        const double pos_diff = residual.position_norm;
         if (pos_diff > innovation_reject_threshold)
         {
             ROS_WARN("Large innovation %.3f m at %.3f s", pos_diff, msg->header.stamp.toSec());
@@ -1640,31 +1972,23 @@ void process_vioodom(const nav_msgs::Odometry::ConstPtr &msg)
                 ROS_WARN("Weakening odom update instead of reset: innovation %.3f m", pos_diff);
             }
         }
+
+        // Adaptive odom R is the main protection against weak odom. The base
+        // covariance can come from fixed parameters or nav_msgs/Odometry
+        // covariance; the health scale then inflates it before the Kalman gain
+        // is computed.
         const double odom_scale = odom_health_scale(pos_diff, msg->header.stamp.toSec());
         const MatrixXd R_odom_meas = odom_scale * Wt * current_odom_Rt * Wt.transpose();
         Kt_kalmanGain = StateCovariance * Ct.transpose() * (Ct * StateCovariance * Ct.transpose() + R_odom_meas).inverse();
 
-        // Quaterniond test_q = Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)) * error_q;
-        // std::cout << "\033[1;31m test_q" << std::endl
-        //           << test_q << "\033[0m" << std::endl;
-
         VectorXd dx(errorstateSize);
         dx = VectorXd::Zero(errorstateSize);
         dx += Kt_kalmanGain * (innovation);
-        // dx += (innovation);
-        // dx.segment<6>(0) = innovation.segment<6>(0);
-        // std::cout << "dx" << std::endl
-        //           << dx << std::endl;
 
-        // X_state += Kt_kalmanGain * (innovation);
+        // Apply the 15D correction at the delayed IMU frame, then replay later
+        // IMU samples so the published state remains at the current IMU time.
         X_state = boxplus(X_state, dx);
-
-        // std::cout << "X_state_update" << std::endl
-        //           << X_state << std::endl;
         joseph_covariance_update(Ct, Kt_kalmanGain, R_odom_meas);
-
-        // system_pub(X_state, sys_seq[0].second.header.stamp); // choose to publish the repropagation or not
-        // std::cout << "re_propagate" << std::endl;
 
         re_propagate();
         cam_system_pub(msg->header.stamp);
@@ -1721,6 +2045,9 @@ bool navsat_to_local_enu(const sensor_msgs::NavSatFix::ConstPtr &msg, Vector3d &
     const double lon_rad = msg->longitude * PI / 180.0;
     if (!gnss_origin_initialized)
     {
+        // 使用第一帧有效 GNSS 作为局部 ENU 原点。这是小范围无人机数据集
+        // 常用的近似：后续经纬度差按地球半径投影到 East/North，海拔差作为
+        // Up。若跨越很大地理范围，应改成更严格的 ECEF/ENU 转换。
         gnss_origin_initialized = true;
         gnss_origin_lat_rad = lat_rad;
         gnss_origin_lon_rad = lon_rad;
@@ -1747,6 +2074,8 @@ bool initialize_filter_from_gnss(const Vector3d &gnss_local, const ros::Time &st
         return false;
     }
 
+    // GNSS cold start 只初始化位置和单位姿态，速度置零。此时没有可靠 yaw，
+    // 因此后续第一批 odom 会重新估计 odom 到 EKF frame 的 yaw/translation。
     first_frame_tag_odom = false;
     ekf_initialized = true;
     first_frame_imu = true;
@@ -1789,9 +2118,11 @@ bool initialize_filter_from_gnss(const Vector3d &gnss_local, const ros::Time &st
     last_accepted_gnss_position_time = stamp.toSec();
     last_accepted_gnss_position_initialized = true;
     last_accepted_gnss_velocity_initialized = false;
+    accepted_gnss_history.clear();
+    push_accepted_gnss_sample(stamp.toSec(), gnss_local);
     last_gnss_motion_reference_initialized = false;
     gnss_nis_monitor.reset();
-    output_filter_initialized = false;
+    reset_output_motion_smoother();
 
     append_pose_to_path(gnss_path_msg,
                         gnss_path_pub,
@@ -1855,6 +2186,8 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
 {
     if (!gnss_alignment_initialized)
     {
+        // 平移先用单帧建立，保证 GNSS 位置能落入当前 EKF frame 的量级。
+        // yaw 需要有足够水平运动后再估计，否则低速/静止窗口会让航向不可观。
         gnss_alignment_R = Matrix3d::Identity();
         gnss_alignment_offset = odom_position - gnss_local;
         gnss_alignment_initialized = true;
@@ -1865,7 +2198,11 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
                  gnss_alignment_offset.z());
     }
 
-    if (!enable_gnss_yaw_alignment || gnss_yaw_alignment_initialized)
+    const bool needs_initial_yaw =
+        enable_gnss_yaw_alignment && !gnss_yaw_alignment_initialized;
+    const bool can_refine_alignment =
+        enable_gnss_alignment_refinement && gnss_yaw_alignment_initialized;
+    if (!needs_initial_yaw && !can_refine_alignment)
     {
         return;
     }
@@ -1878,20 +2215,33 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
     }
     last_gnss_alignment_sample_time = stamp_sec;
     gnss_alignment_pairs.emplace_back(gnss_local, odom_position);
-    while (static_cast<int>(gnss_alignment_pairs.size()) > gnss_alignment_max_samples)
+
+    const int window_max_samples = can_refine_alignment
+                                       ? std::max(gnss_alignment_refinement_min_samples,
+                                                  std::min(gnss_alignment_max_samples,
+                                                           gnss_alignment_refinement_max_samples))
+                                       : gnss_alignment_max_samples;
+    while (static_cast<int>(gnss_alignment_pairs.size()) > window_max_samples)
     {
         gnss_alignment_pairs.pop_front();
     }
 
-    if (static_cast<int>(gnss_alignment_pairs.size()) < gnss_alignment_min_samples)
+    const int required_samples = can_refine_alignment
+                                     ? std::max(gnss_alignment_min_samples,
+                                                gnss_alignment_refinement_min_samples)
+                                     : gnss_alignment_min_samples;
+    if (static_cast<int>(gnss_alignment_pairs.size()) < required_samples)
     {
         return;
     }
 
+    const double min_motion = can_refine_alignment
+                                  ? gnss_alignment_refinement_min_motion
+                                  : gnss_alignment_min_motion;
     const Vector3d gnss_motion = gnss_alignment_pairs.back().first - gnss_alignment_pairs.front().first;
     const Vector3d odom_motion = gnss_alignment_pairs.back().second - gnss_alignment_pairs.front().second;
-    if (gnss_motion.head<2>().norm() < gnss_alignment_min_motion ||
-        odom_motion.head<2>().norm() < gnss_alignment_min_motion)
+    if (gnss_motion.head<2>().norm() < min_motion ||
+        odom_motion.head<2>().norm() < min_motion)
     {
         return;
     }
@@ -1919,6 +2269,9 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
     const double yaw_delta = std::atan2(sin_term, cos_term);
     const Matrix3d candidate_R = yaw_rotation(yaw_delta);
     const Vector3d candidate_offset = odom_center - candidate_R * gnss_center;
+    // 使用 paired GNSS/odom 点集的 2D Procrustes-like 闭式解估计 yaw。
+    // residual 检查是必要的：如果 GNSS 跳点或 odom 中途重定位，单纯的 yaw
+    // 拟合可能给出数值结果，但该结果不应进入滤波器。
     double residual_sum = 0.0;
     double residual_max = 0.0;
     for (const auto &pair : gnss_alignment_pairs)
@@ -1929,29 +2282,73 @@ void update_gnss_alignment(const Vector3d &gnss_local, const Vector3d &odom_posi
         residual_max = std::max(residual_max, residual_norm);
     }
     const double residual_mean = residual_sum / static_cast<double>(gnss_alignment_pairs.size());
-    if (residual_max > gnss_alignment_max_residual)
+    const double max_allowed_residual = can_refine_alignment
+                                            ? gnss_alignment_refinement_max_residual
+                                            : gnss_alignment_max_residual;
+    if (residual_max > max_allowed_residual)
     {
         ROS_WARN_THROTTLE(1.0,
-                          "Skipping GNSS yaw alignment: residual mean %.3f max %.3f exceeds %.3f yaw_delta %.3f",
+                          "Skipping GNSS %s alignment: residual mean %.3f max %.3f exceeds %.3f yaw_delta %.3f",
+                          can_refine_alignment ? "refinement" : "yaw",
                           residual_mean,
                           residual_max,
-                          gnss_alignment_max_residual,
+                          max_allowed_residual,
                           yaw_delta);
         return;
     }
 
-    gnss_alignment_R = candidate_R;
-    gnss_alignment_offset = candidate_offset;
-    gnss_yaw_alignment_initialized = true;
-    ROS_WARN("Initialized GNSS yaw alignment at %.3f s: samples=%zu yaw_delta=%.3f rad residual_mean=%.3f residual_max=%.3f offset %.3f %.3f %.3f",
-             stamp.toSec(),
-             gnss_alignment_pairs.size(),
-             yaw_delta,
-             residual_mean,
-             residual_max,
-             gnss_alignment_offset.x(),
-             gnss_alignment_offset.y(),
-	             gnss_alignment_offset.z());
+    if (!can_refine_alignment)
+    {
+        gnss_alignment_R = candidate_R;
+        gnss_alignment_offset = candidate_offset;
+        gnss_yaw_alignment_initialized = true;
+        ROS_WARN("Initialized GNSS yaw alignment at %.3f s: samples=%zu yaw_delta=%.3f rad residual_mean=%.3f residual_max=%.3f offset %.3f %.3f %.3f",
+                 stamp.toSec(),
+                 gnss_alignment_pairs.size(),
+                 yaw_delta,
+                 residual_mean,
+                 residual_max,
+                 gnss_alignment_offset.x(),
+                 gnss_alignment_offset.y(),
+                 gnss_alignment_offset.z());
+        return;
+    }
+
+    const double gain = clamp01(gnss_alignment_refinement_gain);
+    if (gain <= 0.0)
+    {
+        return;
+    }
+    const double current_yaw = std::atan2(gnss_alignment_R(1, 0), gnss_alignment_R(0, 0));
+    const double yaw_error = normalize_yaw_angle(yaw_delta - current_yaw);
+    const double yaw_step_limit = std::max(0.0, gnss_alignment_refinement_max_yaw_step);
+    const double limited_yaw_error =
+        std::max(-yaw_step_limit, std::min(yaw_step_limit, yaw_error));
+    const double refined_yaw = normalize_yaw_angle(current_yaw + gain * limited_yaw_error);
+
+    Vector3d offset_delta = candidate_offset - gnss_alignment_offset;
+    const double offset_delta_norm = offset_delta.norm();
+    const double offset_step_limit =
+        std::max(0.0, gnss_alignment_refinement_max_translation_step);
+    if (offset_step_limit > 0.0 && offset_delta_norm > offset_step_limit)
+    {
+        offset_delta *= offset_step_limit / offset_delta_norm;
+    }
+
+    gnss_alignment_R = yaw_rotation(refined_yaw);
+    gnss_alignment_offset += gain * offset_delta;
+    ROS_INFO_THROTTLE(2.0,
+                      "Refined GNSS alignment at %.3f s: samples=%zu candidate_yaw=%.3f current_yaw=%.3f refined_yaw=%.3f residual_mean=%.3f residual_max=%.3f offset %.3f %.3f %.3f",
+                      stamp.toSec(),
+                      gnss_alignment_pairs.size(),
+                      yaw_delta,
+                      current_yaw,
+                      refined_yaw,
+                      residual_mean,
+                      residual_max,
+                      gnss_alignment_offset.x(),
+                      gnss_alignment_offset.y(),
+                      gnss_alignment_offset.z());
 }
 
 /// @brief GNSS callback: ENU conversion, alignment, health gating, and position update.
@@ -2032,17 +2429,29 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                           "Using GNSS translation alignment while waiting for yaw alignment: yaw_ready=%d",
                           static_cast<int>(gnss_yaw_alignment_initialized));
     }
+    else if (enable_gnss_alignment_refinement &&
+             gnss_yaw_alignment_initialized &&
+             has_synced_odom_position)
+    {
+        update_gnss_alignment(gnss_local, synced_odom_position, msg->header.stamp);
+    }
 
     const Vector3d z_gnss = gnss_alignment_R * gnss_local + gnss_alignment_offset;
     const Vector3d innovation = z_gnss - X_state.segment<3>(0);
     const double innovation_norm = innovation.norm();
 
+    // GNSS 的标准观测模型只观测位置：
+    //   z = p + v_gnss, H = [I_3, 0, 0, 0, 0]
+    // 姿态、速度和 bias 不被直接观测，只能通过 StateCovariance 中的交叉项
+    // 被 Kalman gain 间接修正。
     MatrixXd H = MatrixXd::Zero(3, errorstateSize);
     H.block<3, 3>(0, 0) = Matrix3d::Identity();
 
     Matrix3d R_base = Matrix3d::Zero();
     if (gnss_use_msg_covariance && msg->position_covariance_type != sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN)
     {
+        // NavSatFix covariance 的布局是 row-major 3x3。当前只使用对角项，
+        // 并用 gnss_min_cov_* 保证弱 covariance 不会让 GNSS 被过度信任。
         R_base(0, 0) = std::max(gnss_min_cov_xy, gnss_cov_scale * msg->position_covariance[0]);
         R_base(1, 1) = std::max(gnss_min_cov_xy, gnss_cov_scale * msg->position_covariance[4]);
         R_base(2, 2) = std::max(gnss_min_cov_z, gnss_cov_scale * msg->position_covariance[8]);
@@ -2056,6 +2465,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
 
     if (gnss_position_covariance_floor_xy > 0.0)
     {
+        // 可选地提高 P 的位置方差下限。用途是防止长期 odom 约束后 P 过小，
+        // 导致合理的 GNSS 创新也被 NIS 门控判为异常。
         StateCovariance(0, 0) = std::max(StateCovariance(0, 0), gnss_position_covariance_floor_xy);
         StateCovariance(1, 1) = std::max(StateCovariance(1, 1), gnss_position_covariance_floor_xy);
     }
@@ -2067,16 +2478,10 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
 
     if (gnss_update_only_when_odom_lost && !odom_lost && odom_ever_initialized)
     {
-        if (last_accepted_gnss_position_initialized)
-        {
-            const double accepted_dt = stamp - last_accepted_gnss_position_time;
-            if (accepted_dt >= gnss_velocity_min_dt && accepted_dt <= gnss_velocity_max_dt)
-            {
-                last_accepted_gnss_velocity =
-                    (z_gnss - last_accepted_gnss_position) / accepted_dt;
-                last_accepted_gnss_velocity_initialized = true;
-            }
-        }
+        // fallback-only 模式下，odom 健康时 GNSS 不进入 Kalman update，只刷新
+        // 最近 GNSS 位置参考。odom 丢失后仍只使用 GNSS 位置观测，不使用
+        // GNSS 位置差分得到的速度伪观测。
+        push_accepted_gnss_sample(stamp, z_gnss);
         last_gnss_update_time = stamp;
         last_gnss_health_score = 1.0;
         last_accepted_gnss_position = z_gnss;
@@ -2099,6 +2504,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     SensorHealthMonitor::Decision gnss_nis_decision{SensorHealthMonitor::HEALTHY, 1.0, false};
     if (enable_gnss_mahalanobis_gate)
     {
+        // NIS/Mahalanobis gate 使用 S = HPH^T + R 归一化创新。相比单纯位置差，
+        // 它会同时考虑当前滤波器位置不确定度和 GNSS covariance。
         if (enable_gnss_nis_state_machine)
         {
             gnss_nis_decision = gnss_nis_monitor.update(gnss_mahalanobis,
@@ -2146,6 +2553,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     double motion_consistency_score = 1.0;
     if (enable_gnss_motion_consistency && has_synced_odom_position)
     {
+        // 运动一致性不直接比较绝对位置，而是比较一段时间内 GNSS delta 与
+        // odom delta。这样能发现 GNSS 漂移/跳点，同时降低 frame 平移误差的影响。
         if (!last_gnss_motion_reference_initialized)
         {
             last_gnss_motion_reference_initialized = true;
@@ -2324,6 +2733,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                                                          gnss_adaptive_threshold,
                                                          gnss_adaptive_reject_threshold,
                                                          gnss_adaptive_max_scale);
+    // 多个健康指标共同决定最终 R scale。所有 scale 都只会增大 R 或保持不变，
+    // 避免弱观测通过某一项指标“抵消”另一项风险。
     if (enable_gnss_mahalanobis_gate && !trusted_gnss_against_weak_odom)
     {
         gnss_scale = std::max(gnss_scale,
@@ -2404,87 +2815,37 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                           gnss_reject_count);
     }
 
-    // Default GNSS observation is 3D position. In odom-lost mode the update can
-    // be expanded to [position, velocity] using finite-difference GNSS velocity.
+    // GNSS observation is fixed to 3D position. The historical finite-difference
+    // GNSS velocity pseudo-observation is intentionally disabled for data/data2
+    // odom-dropout experiments.
     MatrixXd H_update = H;
     VectorXd innovation_update = innovation;
     MatrixXd R_update = R;
-    bool using_gnss_velocity = false;
-    Vector3d gnss_velocity = Vector3d::Zero();
-    if (odom_lost &&
-        enable_gnss_velocity_when_odom_lost &&
-        last_accepted_gnss_position_initialized)
-    {
-        const double gnss_dt = stamp - last_accepted_gnss_position_time;
-        if (gnss_dt >= gnss_velocity_min_dt && gnss_dt <= gnss_velocity_max_dt)
-        {
-            gnss_velocity = (z_gnss - last_accepted_gnss_position) / gnss_dt;
-            H_update = MatrixXd::Zero(6, errorstateSize);
-            H_update.block<3, 3>(0, 0) = Matrix3d::Identity();
-            H_update.block<3, 3>(3, 6) = Matrix3d::Identity();
-            innovation_update = VectorXd::Zero(6);
-            innovation_update.segment<3>(0) = innovation;
-            innovation_update.segment<3>(3) = gnss_velocity - X_state.segment<3>(7);
-            R_update = MatrixXd::Zero(6, 6);
-            R_update.block<3, 3>(0, 0) = R;
-            R_update.block<3, 3>(3, 3) =
-                Matrix3d::Identity() * std::max(1.0e-4, gnss_velocity_cov * gnss_scale);
-            using_gnss_velocity = true;
-            ROS_INFO_THROTTLE(2.0,
-                              "GNSS velocity pseudo-update active: dt %.3f s vel %.3f %.3f %.3f odom_score %.2f",
-                              gnss_dt,
-                              gnss_velocity.x(),
-                              gnss_velocity.y(),
-                              gnss_velocity.z(),
-                              effective_odom_health_score);
-        }
-    }
 
     MatrixXd S = H_update * StateCovariance * H_update.transpose() + R_update;
     MatrixXd K = StateCovariance * H_update.transpose() * S.inverse();
     VectorXd dx = VectorXd::Zero(errorstateSize);
     dx = K * innovation_update;
+    // GNSS update 仍然产生 15D dx，因此统一通过 boxplus() 修正 nominal state。
+    // 对于标准位置观测，dx 中的 dtheta/dv/dbias 可能因为 P 的交叉协方差而非零。
     X_state = boxplus(X_state, dx);
     joseph_covariance_update(H_update, K, R_update);
 
     Vector3d position_delta = dx.segment<3>(0);
-    Vector3d velocity_delta = Vector3d::Zero();
-    if (using_gnss_velocity)
-    {
-        velocity_delta = dx.segment<3>(6);
-    }
     if (odom_lost && enable_gnss_position_snap_when_odom_lost)
     {
         const Vector3d forced_position_delta = z_gnss - X_state.segment<3>(0);
         X_state.segment<3>(0) = z_gnss;
         position_delta += forced_position_delta;
-        if (enable_gnss_velocity_when_odom_lost && last_accepted_gnss_velocity_initialized)
-        {
-            const Vector3d forced_velocity_delta =
-                last_accepted_gnss_velocity - X_state.segment<3>(7);
-            X_state.segment<3>(7) = last_accepted_gnss_velocity;
-            velocity_delta += forced_velocity_delta;
-            using_gnss_velocity = true;
-        }
     }
     for (auto &state_and_imu : sys_seq)
     {
+        // GNSS 更新发生在当前状态上，但 replay buffer 中还缓存着未来可能用于
+        // 延迟 odom 更新的历史 nominal state。同步平移增量可以避免下一次
+        // odom 回放时重新使用旧的 GNSS 前状态。
         state_and_imu.first.segment<3>(0) += position_delta;
-        if (using_gnss_velocity)
-        {
-            state_and_imu.first.segment<3>(7) += velocity_delta;
-        }
     }
-    if (last_accepted_gnss_position_initialized)
-    {
-        const double accepted_dt = stamp - last_accepted_gnss_position_time;
-        if (accepted_dt >= gnss_velocity_min_dt && accepted_dt <= gnss_velocity_max_dt)
-        {
-            last_accepted_gnss_velocity =
-                (z_gnss - last_accepted_gnss_position) / accepted_dt;
-            last_accepted_gnss_velocity_initialized = true;
-        }
-    }
+    push_accepted_gnss_sample(stamp, z_gnss);
     last_gnss_update_time = stamp;
     last_accepted_gnss_position = z_gnss;
     last_accepted_gnss_position_time = stamp;
@@ -2495,8 +2856,8 @@ void gnss_fix_callback(const sensor_msgs::NavSatFix::ConstPtr &msg)
                         world_frame_id,
                         z_gnss,
                         Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6)),
-	                        msg->header.stamp,
-	                        gnss_path_counter);
+                        msg->header.stamp,
+                        gnss_path_counter);
 }
 /// @brief Convert a 3D Lie-algebra rotation vector to a rotation matrix.
 Matrix3d lie_algebra_2_rotation(Vector3d v)
@@ -2525,34 +2886,41 @@ Matrix3d lie_algebra_2_rotation(Vector3d v)
 VectorXd boxplus(VectorXd x, VectorXd dx)
 {
     VectorXd x_plus(x.rows());
-    x_plus(0) = x(0) + dx(0);
-    x_plus(1) = x(1) + dx(1);
-    x_plus(2) = x(2) + dx(2);
+    // dx uses the 15D minimal error-state layout:
+    //   [dp(0:2), dtheta(3:5), dv(6:8), dbg(9:11), dba(12:14)].
+    // The nominal state uses a 4D quaternion, so only the position/velocity/bias
+    // parts are direct additions. Attitude must be composed on SO(3).
+    x_plus.segment<3>(kStatePositionOffset) =
+        x.segment<3>(kStatePositionOffset) +
+        dx.segment<3>(kErrorPositionOffset);
 
-    Vector3d dv(dx(3), dx(4), dx(5));
-    Matrix3d dR = lie_algebra_2_rotation(dv);
-    Quaterniond x_q(x(3), x(4), x(5), x(6));
+    Vector3d dtheta = dx.segment<3>(kErrorRotationOffset);
+    Matrix3d dR = lie_algebra_2_rotation(dtheta);
+    Quaterniond x_q(x(kStateQuaternionOffset),
+                    x(kStateQuaternionOffset + 1),
+                    x(kStateQuaternionOffset + 2),
+                    x(kStateQuaternionOffset + 3));
     x_q.normalize();
     Matrix3d x_R = x_q.toRotationMatrix();
     Matrix3d x_R_plus = x_R * dR;
     Quaterniond x_q_plus(x_R_plus);
     x_q_plus.normalize();
-    x_plus(3) = x_q_plus.w();
-    x_plus(4) = x_q_plus.x();
-    x_plus(5) = x_q_plus.y();
-    x_plus(6) = x_q_plus.z();
+    x_plus(kStateQuaternionOffset) = x_q_plus.w();
+    x_plus(kStateQuaternionOffset + 1) = x_q_plus.x();
+    x_plus(kStateQuaternionOffset + 2) = x_q_plus.y();
+    x_plus(kStateQuaternionOffset + 3) = x_q_plus.z();
 
-    x_plus(7) = x(7) + dx(6);
-    x_plus(8) = x(8) + dx(7);
-    x_plus(9) = x(9) + dx(8);
+    x_plus.segment<3>(kStateVelocityOffset) =
+        x.segment<3>(kStateVelocityOffset) +
+        dx.segment<3>(kErrorVelocityOffset);
 
-    x_plus(10) = x(10) + dx(9);
-    x_plus(11) = x(11) + dx(10);
-    x_plus(12) = x(12) + dx(11);
+    x_plus.segment<3>(kStateGyroBiasOffset) =
+        x.segment<3>(kStateGyroBiasOffset) +
+        dx.segment<3>(kErrorGyroBiasOffset);
 
-    x_plus(13) = x(13) + dx(12);
-    x_plus(14) = x(14) + dx(13);
-    x_plus(15) = x(15) + dx(14);
+    x_plus.segment<3>(kStateAccelBiasOffset) =
+        x.segment<3>(kStateAccelBiasOffset) +
+        dx.segment<3>(kErrorAccelBiasOffset);
 
     return x_plus;
 }
@@ -2605,6 +2973,16 @@ int main(int argc, char **argv)
     n.getParam("imu_trans_y", imu_trans_y);
     n.getParam("imu_trans_z", imu_trans_z);
     n.getParam("cutoff_freq", cutoff_freq);
+    n.getParam("enable_output_motion_smoothing", enable_output_motion_smoothing);
+    n.getParam("output_smoothing_natural_freq", output_smoothing_natural_freq);
+    n.getParam("output_smoothing_damping_ratio", output_smoothing_damping_ratio);
+    n.getParam("output_smoothing_max_accel", output_smoothing_max_accel);
+    n.getParam("output_smoothing_max_correction_speed", output_smoothing_max_correction_speed);
+    n.getParam("output_smoothing_normal_natural_freq", output_smoothing_normal_natural_freq);
+    n.getParam("output_smoothing_normal_max_accel", output_smoothing_normal_max_accel);
+    n.getParam("output_smoothing_normal_max_correction_speed", output_smoothing_normal_max_correction_speed);
+    n.getParam("output_smoothing_release_error", output_smoothing_release_error);
+    n.getParam("output_smoothing_recovery_duration", output_smoothing_recovery_duration);
     n.getParam("offset_px", offset_px);
     n.getParam("offset_py", offset_py);
     n.getParam("offset_pz", offset_pz);
@@ -2621,10 +2999,23 @@ int main(int argc, char **argv)
     n.getParam("odom_adaptive_reject_threshold", odom_adaptive_reject_threshold);
     n.getParam("odom_adaptive_max_scale", odom_adaptive_max_scale);
     n.getParam("odom_loss_timeout", odom_loss_timeout);
+    n.getParam("enable_odom_recovery_guard", enable_odom_recovery_guard);
+    n.getParam("odom_recovery_frames", odom_recovery_frames);
+    n.getParam("odom_recovery_scale", odom_recovery_scale);
+    n.getParam("odom_recovery_min_scale", odom_recovery_min_scale);
     n.getParam("enable_gnss_velocity_when_odom_lost", enable_gnss_velocity_when_odom_lost);
+    if (enable_gnss_velocity_when_odom_lost)
+    {
+        ROS_WARN("GNSS velocity pseudo-observation is deprecated and forced off; GNSS will be used as a position observation only");
+        enable_gnss_velocity_when_odom_lost = false;
+    }
     n.getParam("gnss_velocity_min_dt", gnss_velocity_min_dt);
     n.getParam("gnss_velocity_max_dt", gnss_velocity_max_dt);
     n.getParam("gnss_velocity_cov", gnss_velocity_cov);
+    n.getParam("gnss_velocity_window_size", gnss_velocity_window_size);
+    n.getParam("gnss_velocity_smoothing_alpha", gnss_velocity_smoothing_alpha);
+    n.getParam("gyro_bias_rw_cov", gyro_bias_rw_cov);
+    n.getParam("acc_bias_rw_cov", acc_bias_rw_cov);
     n.getParam("gnss_adaptive_threshold", gnss_adaptive_threshold);
     n.getParam("gnss_adaptive_reject_threshold", gnss_adaptive_reject_threshold);
     n.getParam("gnss_adaptive_max_scale", gnss_adaptive_max_scale);
@@ -2682,6 +3073,14 @@ int main(int argc, char **argv)
     n.getParam("gnss_alignment_sample_interval", gnss_alignment_sample_interval);
     n.getParam("gnss_odom_sync_max_dt", gnss_odom_sync_max_dt);
     n.getParam("gnss_alignment_max_residual", gnss_alignment_max_residual);
+    n.getParam("enable_gnss_alignment_refinement", enable_gnss_alignment_refinement);
+    n.getParam("gnss_alignment_refinement_min_samples", gnss_alignment_refinement_min_samples);
+    n.getParam("gnss_alignment_refinement_max_samples", gnss_alignment_refinement_max_samples);
+    n.getParam("gnss_alignment_refinement_min_motion", gnss_alignment_refinement_min_motion);
+    n.getParam("gnss_alignment_refinement_max_residual", gnss_alignment_refinement_max_residual);
+    n.getParam("gnss_alignment_refinement_gain", gnss_alignment_refinement_gain);
+    n.getParam("gnss_alignment_refinement_max_yaw_step", gnss_alignment_refinement_max_yaw_step);
+    n.getParam("gnss_alignment_refinement_max_translation_step", gnss_alignment_refinement_max_translation_step);
     n.getParam("gnss_min_status", gnss_min_status);
     n.getParam("path_publish_stride", path_publish_stride);
     n.getParam("path_max_points", path_max_points);
@@ -2744,6 +3143,113 @@ void ahead_system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
 
     ahead_odom_pub.publish(odom_fusion);
 }
+
+/// @brief Reset the output smoother after hard state discontinuities.
+void reset_output_motion_smoother()
+{
+    output_filter_initialized = false;
+    output_filter_state = Vector3d::Zero();
+    output_filter_velocity = Vector3d::Zero();
+    last_output_filter_time = -1.0;
+    output_smoothing_recovery_until = -1.0;
+}
+
+/// @brief Second-order damped output smoother with low-latency healthy tracking.
+void smooth_output_motion(const Vector3d &raw_position,
+                          const Vector3d &raw_velocity,
+                          const ros::Time &stamp,
+                          Vector3d &output_position,
+                          Vector3d &output_velocity)
+{
+    output_position = raw_position;
+    output_velocity = raw_velocity;
+    if (!enable_output_motion_smoothing)
+    {
+        reset_output_motion_smoother();
+        return;
+    }
+
+    double dt_filter = last_output_filter_time > 0.0
+                           ? stamp.toSec() - last_output_filter_time
+                           : dt;
+    if (dt_filter <= 1.0e-5 && sample_freq > 1.0e-5)
+    {
+        dt_filter = 1.0 / sample_freq;
+    }
+    if (dt_filter <= 1.0e-5)
+    {
+        dt_filter = 0.01;
+    }
+    dt_filter = std::max(0.001, std::min(0.1, dt_filter));
+
+    if (!output_filter_initialized || last_output_filter_time < 0.0)
+    {
+        output_filter_state = raw_position;
+        output_filter_velocity = raw_velocity;
+        output_filter_initialized = true;
+        last_output_filter_time = stamp.toSec();
+        output_position = output_filter_state;
+        output_velocity = output_filter_velocity;
+        return;
+    }
+
+    const bool output_smoothing_recovery_mode_active =
+        output_smoothing_recovery_output_active(stamp.toSec()) ||
+        odom_is_lost_at(stamp.toSec()) ||
+        last_odom_health_score <= odom_weak_health_threshold;
+    const double tracking_error =
+        (raw_position - output_filter_state).norm();
+    const bool output_smoothing_low_latency_mode_active =
+        !output_smoothing_recovery_mode_active &&
+        tracking_error <= std::max(0.0, output_smoothing_release_error);
+    if (output_smoothing_low_latency_mode_active)
+    {
+        output_filter_state = raw_position;
+        output_filter_velocity = raw_velocity;
+        last_output_filter_time = stamp.toSec();
+        output_position = raw_position;
+        output_velocity = raw_velocity;
+        return;
+    }
+
+    const Vector3d previous_position = output_filter_state;
+    const Vector3d previous_velocity = output_filter_velocity;
+    const double natural_freq = output_smoothing_recovery_mode_active
+                                    ? output_smoothing_natural_freq
+                                    : output_smoothing_normal_natural_freq;
+    const double max_accel = output_smoothing_recovery_mode_active
+                                 ? output_smoothing_max_accel
+                                 : output_smoothing_normal_max_accel;
+    const double max_correction_speed = output_smoothing_recovery_mode_active
+                                            ? output_smoothing_max_correction_speed
+                                            : output_smoothing_normal_max_correction_speed;
+    const double omega =
+        2.0 * PI * std::max(1.0e-3, natural_freq);
+    const double damping_ratio =
+        std::max(0.0, output_smoothing_damping_ratio);
+    const Vector3d position_error = raw_position - previous_position;
+    const Vector3d velocity_error = raw_velocity - previous_velocity;
+
+    const Vector3d second_order_position_correction_velocity =
+        clamp_vector_norm(omega * position_error,
+                          std::max(0.0, max_correction_speed));
+    Vector3d acceleration =
+        omega * second_order_position_correction_velocity +
+        2.0 * damping_ratio * omega * velocity_error;
+    acceleration = clamp_vector_norm(acceleration,
+                                     std::max(0.0, max_accel));
+
+    const Vector3d candidate_velocity = previous_velocity + acceleration * dt_filter;
+    const Vector3d candidate_position =
+        previous_position + candidate_velocity * dt_filter;
+
+    output_filter_state = candidate_position;
+    output_filter_velocity = candidate_velocity;
+    last_output_filter_time = stamp.toSec();
+    output_position = output_filter_state;
+    output_velocity = output_filter_velocity;
+}
+
 /// @brief Publish the main fused EKF odometry and append visualization paths/markers.
 void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
 {
@@ -2760,14 +3266,13 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.pose.pose.orientation.x = q.x();
     odom_fusion.pose.pose.orientation.y = q.y();
     odom_fusion.pose.pose.orientation.z = q.z();
-    odom_fusion.twist.twist.linear.x = X_state_in(7);
-    odom_fusion.twist.twist.linear.y = X_state_in(8);
-    odom_fusion.twist.twist.linear.z = X_state_in(9);
 
     Vector3d pos_center(X_state_in(0), X_state_in(1), X_state_in(2));
     Vector3d pos_center_world = pos_center + q.toRotationMatrix() * Vector3d(imu_trans_x, imu_trans_y, imu_trans_z);
+    Vector3d raw_velocity(X_state_in(7), X_state_in(8), X_state_in(9));
     Vector3d pos_center_output = pos_center_world;
-    if (cutoff_freq > 1.0e-5)
+    Vector3d output_velocity = raw_velocity;
+    if (!enable_output_motion_smoothing && cutoff_freq > 1.0e-5)
     {
         if (!output_filter_initialized)
         {
@@ -2792,6 +3297,11 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
             }
         }
         pos_center_output = output_filter_state;
+        output_velocity = raw_velocity;
+    }
+    if (enable_output_motion_smoothing)
+    {
+        smooth_output_motion(pos_center_world, raw_velocity, stamp, pos_center_output, output_velocity);
     }
 
     odom_fusion.pose.pose.position.x = pos_center_output(0);
@@ -2801,6 +3311,9 @@ void system_pub(const Eigen::VectorXd &X_state_in, ros::Time stamp)
     odom_fusion.pose.pose.position.x += offset_px;
     odom_fusion.pose.pose.position.y += offset_py;
     odom_fusion.pose.pose.position.z += offset_pz;
+    odom_fusion.twist.twist.linear.x = output_velocity(0);
+    odom_fusion.twist.twist.linear.y = output_velocity(1);
+    odom_fusion.twist.twist.linear.z = output_velocity(2);
 
     static int cnt = 0;
     if(cnt < publish_warmup_frames){
@@ -2849,25 +3362,30 @@ void cam_system_pub(ros::Time stamp)
 /// @brief Initialize nominal state, error-state covariance, process noise, and odom R.
 void initsys()
 {
-    // The nominal state keeps a unit quaternion, so it has 16 scalars. Its
-    // covariance is kept on the 15D minimal error state to avoid a singular
-    // quaternion covariance block.
+    // 名义状态和误差状态维度必须同时维护：
+    //   stateSize=16        X=[p3, q4, v3, bg3, ba3]
+    //   errorstateSize=15   dx=[dp3, dtheta3, dv3, dbg3, dba3]
+    //   measurementSize=7   odom 原始观测 [p3, q4]
+    //   inputSize=6         IMU 输入噪声 [gyro3, acc3]
+    //
+    // Rt 的实际维度是 measurementSize-1=6，因为 EKF 中使用的是 6D pose
+    // residual，而不是直接对 7D [p,q] 做线性差分。
     stateSize = 16;
     errorstateSize = 15;
     measurementSize = 7;
     inputSize = 6;
 
     X_state = VectorXd::Zero(stateSize);
-    X_state(3) = 1.0;
-    X_state(4) = 0;
-    X_state(5) = 0;
-    X_state(6) = 0;
-    X_state(7) = 0;
-    X_state(8) = 0;
-    X_state(9) = 0;
+    X_state(kStateQuaternionOffset) = 1.0;
+    X_state(kStateQuaternionOffset + 1) = 0;
+    X_state(kStateQuaternionOffset + 2) = 0;
+    X_state(kStateQuaternionOffset + 3) = 0;
+    X_state(kStateVelocityOffset) = 0;
+    X_state(kStateVelocityOffset + 1) = 0;
+    X_state(kStateVelocityOffset + 2) = 0;
     // Initial gyro and accelerometer biases are parameterized as constants here.
-    X_state.segment<3>(10) = bg_0;
-    X_state.segment<3>(13) = ba_0;
+    X_state.segment<3>(kStateGyroBiasOffset) = bg_0;
+    X_state.segment<3>(kStateAccelBiasOffset) = ba_0;
     Z_measurement = VectorXd::Zero(measurementSize);
     StateCovariance = MatrixXd::Identity(errorstateSize, errorstateSize);
 
@@ -2890,39 +3408,56 @@ void initsys()
 /// @brief Extract the current nominal state components from X_state.
 void getState(Vector3d &p, Quaterniond &q, Vector3d &v, Vector3d &bg, Vector3d &ba)
 {
-    p = X_state.segment<3>(0);
-    q = Quaterniond(X_state(3), X_state(4), X_state(5), X_state(6));
-    v = X_state.segment<3>(7);
-    bg = X_state.segment<3>(10);
-    ba = X_state.segment<3>(13);
+    p = X_state.segment<3>(kStatePositionOffset);
+    q = Quaterniond(X_state(kStateQuaternionOffset),
+                    X_state(kStateQuaternionOffset + 1),
+                    X_state(kStateQuaternionOffset + 2),
+                    X_state(kStateQuaternionOffset + 3));
+    v = X_state.segment<3>(kStateVelocityOffset);
+    bg = X_state.segment<3>(kStateGyroBiasOffset);
+    ba = X_state.segment<3>(kStateAccelBiasOffset);
 }
 
 
 /// @brief Discrete IMU propagation for the 16D nominal state.
 VectorXd propagate_nominal_state(VectorXd X_state, Vector3d gyro, Vector3d acc, double dt)
 {
-    // IMU measurements are bias-corrected in the body frame, rotated by q into
-    // the world frame, then integrated with constant acceleration over dt.
+    // 名义状态预测使用当前 IMU 样本做零阶保持：
+    //   gyro_unbias = gyro - bg
+    //   acc_world   = gravity + R(q) * (acc - ba)
+    //   p_k = p + v*dt + 0.5*acc_world*dt^2
+    //   q_k = q * Exp((gyro-bg)*dt)
+    //   v_k = v + acc_world*dt
+    //
+    // ng/na/nbg/nba 当前默认是 0，保留这些变量是为了支持后续显式噪声采样或
+    // bias random walk 建模。
     VectorXd updated_X_state(VectorXd::Zero(stateSize));
 
-    const Vector3d v = X_state.segment<3>(7);
-    const Vector3d bg = X_state.segment<3>(10);
-    const Vector3d ba = X_state.segment<3>(13);
-    Quaterniond q(X_state(3), X_state(4), X_state(5), X_state(6));
+    const Vector3d v = X_state.segment<3>(kStateVelocityOffset);
+    const Vector3d bg = X_state.segment<3>(kStateGyroBiasOffset);
+    const Vector3d ba = X_state.segment<3>(kStateAccelBiasOffset);
+    Quaterniond q(X_state(kStateQuaternionOffset),
+                  X_state(kStateQuaternionOffset + 1),
+                  X_state(kStateQuaternionOffset + 2),
+                  X_state(kStateQuaternionOffset + 3));
     q.normalize();
     const Vector3d unbiased_gyro = gyro - bg - ng;
     const Vector3d world_acc = gravity + q * (acc - ba - na);
 
-    updated_X_state.segment<3>(0) = X_state.segment<3>(0) + v * dt + 0.5 * world_acc * dt * dt;
+    updated_X_state.segment<3>(kStatePositionOffset) =
+        X_state.segment<3>(kStatePositionOffset) + v * dt + 0.5 * world_acc * dt * dt;
 
     Quaterniond updated_q = (q * delta_quaternion_from_gyro(unbiased_gyro, dt)).normalized();
-    updated_X_state(3) = updated_q.w();
-    updated_X_state(4) = updated_q.x();
-    updated_X_state(5) = updated_q.y();
-    updated_X_state(6) = updated_q.z();
-    updated_X_state.segment<3>(7) = X_state.segment<3>(7) + world_acc * dt;
-    updated_X_state.segment<3>(10) = X_state.segment<3>(10) + nbg * dt;
-    updated_X_state.segment<3>(13) = X_state.segment<3>(13) + nba * dt;
+    updated_X_state(kStateQuaternionOffset) = updated_q.w();
+    updated_X_state(kStateQuaternionOffset + 1) = updated_q.x();
+    updated_X_state(kStateQuaternionOffset + 2) = updated_q.y();
+    updated_X_state(kStateQuaternionOffset + 3) = updated_q.z();
+    updated_X_state.segment<3>(kStateVelocityOffset) =
+        X_state.segment<3>(kStateVelocityOffset) + world_acc * dt;
+    updated_X_state.segment<3>(kStateGyroBiasOffset) =
+        X_state.segment<3>(kStateGyroBiasOffset) + nbg * dt;
+    updated_X_state.segment<3>(kStateAccelBiasOffset) =
+        X_state.segment<3>(kStateAccelBiasOffset) + nba * dt;
     return updated_X_state;
 }
 
@@ -2932,7 +3467,10 @@ VectorXd g_model()
 {
     VectorXd g(VectorXd::Zero(measurementSize));
 
-    g.segment<7>(0) = X_state.segment<7>(0);
+    // odom measurement model returns the nominal pose [p,q]. The residual is
+    // not computed here because quaternion residuals require SO(3) logarithm,
+    // which is handled by build_odom_pose_residual().
+    g.segment<7>(0) = X_state.segment<7>(kStatePositionOffset);
     return g;
 }
 
@@ -2949,21 +3487,46 @@ Matrix3d hat(Vector3d v)
 /// @brief Error-state process Jacobian F for IMU prediction.
 MatrixXd diff_f_diff_x(Quaterniond q_last, Vector3d gyro, Vector3d acc, Vector3d bg_last, Vector3d ba_last)
 {
+    // Continuous-time error-state Jacobian F for
+    //   dx=[dp,dtheta,dv,dbg,dba].
+    //
+    // Non-zero blocks:
+    //   d(dp_dot)/d(dv)        = I
+    //   d(dtheta_dot)/dtheta   = -hat(gyro-bg)
+    //   d(dtheta_dot)/d(dbg)   = -I
+    //   d(dv_dot)/dtheta       = -R(q) * hat(acc-ba)
+    //   d(dv_dot)/d(dba)       = -R(q)
+    //
+    // Bias random walk terms are modeled through process noise; with the
+    // current Qt/V layout there are no direct F blocks for dbg/dba.
     MatrixXd diff_f_diff_x_jacobian(MatrixXd::Zero(errorstateSize, errorstateSize));
-    diff_f_diff_x_jacobian.block<3, 3>(0, 6) = Eigen::Matrix3d::Identity(); // dp/dv
-    diff_f_diff_x_jacobian.block<3, 3>(3, 3) = -hat(gyro - bg_last);       // d(dtheta)/dtheta
-    diff_f_diff_x_jacobian.block<3, 3>(3, 9) = -Eigen::Matrix3d::Identity(); // d(dtheta)/dbg
-    diff_f_diff_x_jacobian.block<3, 3>(6, 3) = -q_last.toRotationMatrix() * hat(acc - ba_last); // dv/dtheta
-    diff_f_diff_x_jacobian.block<3, 3>(6, 12) = -q_last.toRotationMatrix(); // dv/dba
+    diff_f_diff_x_jacobian.block<3, 3>(kErrorPositionOffset, kErrorVelocityOffset) =
+        Eigen::Matrix3d::Identity();
+    diff_f_diff_x_jacobian.block<3, 3>(kErrorRotationOffset, kErrorRotationOffset) =
+        -hat(gyro - bg_last);
+    diff_f_diff_x_jacobian.block<3, 3>(kErrorRotationOffset, kErrorGyroBiasOffset) =
+        -Eigen::Matrix3d::Identity();
+    diff_f_diff_x_jacobian.block<3, 3>(kErrorVelocityOffset, kErrorRotationOffset) =
+        -q_last.toRotationMatrix() * hat(acc - ba_last);
+    diff_f_diff_x_jacobian.block<3, 3>(kErrorVelocityOffset, kErrorAccelBiasOffset) =
+        -q_last.toRotationMatrix();
     return diff_f_diff_x_jacobian;
 }
 
 /// @brief Process-noise Jacobian V mapping IMU noise into the 15D error state.
 MatrixXd diff_f_diff_n(Quaterniond q_last)
 {
+    // V maps IMU white noise n=[n_gyro, n_acc] into dx. With the current model:
+    //   gyro noise affects dtheta_dot
+    //   acc noise affects dv_dot after rotation into world frame
+    // Bias random-walk noise is represented by nbg/nba variables in the nominal
+    // propagation, but Qt is only 6x6 here; extending bias process noise would
+    // require increasing inputSize and adding dbg/dba noise blocks.
     MatrixXd diff_f_diff_n_jacobian(MatrixXd::Zero(errorstateSize, inputSize));
-    diff_f_diff_n_jacobian.block<3, 3>(3, 0) = -Eigen::Matrix3d::Identity();
-    diff_f_diff_n_jacobian.block<3, 3>(6, 3) = -q_last.toRotationMatrix();
+    diff_f_diff_n_jacobian.block<3, 3>(kErrorRotationOffset, 0) =
+        -Eigen::Matrix3d::Identity();
+    diff_f_diff_n_jacobian.block<3, 3>(kErrorVelocityOffset, 3) =
+        -q_last.toRotationMatrix();
 
     return diff_f_diff_n_jacobian;
 }
@@ -2971,9 +3534,16 @@ MatrixXd diff_f_diff_n(Quaterniond q_last)
 /// @brief Odom measurement Jacobian H from 15D error state to 6D pose residual.
 MatrixXd diff_g_diff_x()
 {
+    // Odom observes pose only:
+    //   residual_p      ~= dp
+    //   residual_theta  ~= dtheta
+    // The velocity and bias columns remain zero; they can still be corrected
+    // indirectly through cross-covariance P(position/orientation, velocity/bias).
     MatrixXd diff_g_diff_x_jacobian(MatrixXd::Zero(measurementSize - 1, errorstateSize));
-    diff_g_diff_x_jacobian.block<3, 3>(0, 0) = MatrixXd::Identity(3, 3);
-    diff_g_diff_x_jacobian.block<3, 3>(3, 3) = MatrixXd::Identity(3, 3);
+    diff_g_diff_x_jacobian.block<3, 3>(kResidualPositionOffset, kErrorPositionOffset) =
+        MatrixXd::Identity(3, 3);
+    diff_g_diff_x_jacobian.block<3, 3>(kResidualRotationOffset, kErrorRotationOffset) =
+        MatrixXd::Identity(3, 3);
 
     return diff_g_diff_x_jacobian;
 }

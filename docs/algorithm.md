@@ -33,7 +33,7 @@ dx = [dp, dtheta, dv, dbg, dba]
 | IMU 输入 | 角速度、线加速度 | 高频预测位置、姿态、速度和协方差 | `Qt`，由 `gyro_cov`、`acc_cov` 控制 |
 | odom 观测 | 位置 + 姿态 | 主要短时位姿约束 | `Rt`，由 `position_cov`、`q_rp_cov`、`q_yaw_cov` 控制 |
 | GNSS 观测 | `NavSatFix` 转 ENU 后的位置 | 低频全局位置约束 | 独立 GNSS `R`，受 GNSS 消息 covariance、最小 covariance 和健康缩放控制 |
-| GNSS 速度伪观测 | 连续 GNSS 位置差分 | odom 丢失时辅助退化定位 | `gnss_velocity_cov` |
+| GNSS 速度伪观测 | 连续 GNSS 位置差分 | 历史可选分支，后续 data/data2 消融实验不启用 | `enable_gnss_velocity_when_odom_lost=false` |
 
 展示或汇报时可以概括为：IMU 负责连续预测，odom 负责短时稳定，GNSS 负责全局约束，协方差和健康门控决定每类观测被信任的程度。
 
@@ -47,7 +47,7 @@ dx = [dp, dtheta, dv, dbg, dba]
 | 15 维误差状态协方差 | `StateCovariance` | `dx=[dp,dtheta,dv,dbg,dba]` 的协方差，不包含 4 维四元数 |
 | IMU 输入噪声 | `Qt` | 6x6，对应 `[gyro, acc]` |
 | odom 观测噪声 | `Rt`、`current_odom_Rt` | 6x6，对应 `[position residual, rotation-vector residual]` |
-| GNSS 观测噪声 | `R_base`、`R_update` | GNSS 位置或位置+速度伪观测的协方差 |
+| GNSS 观测噪声 | `R_base`、`R_update` | 后续实验使用 GNSS 位置观测协方差；速度伪观测分支保持关闭 |
 | IMU 预测 | `imu_callback()`、`propagate_nominal_state()` | 传播名义状态和 `StateCovariance` |
 | odom 更新 | `process_vioodom()`、`update_lastest_state()` | 形成 6 维 pose residual 并执行 EKF 更新 |
 | GNSS 更新 | `gnss_fix_callback()` | ENU 转换、对齐、门控、健康评分和位置更新 |
@@ -91,7 +91,7 @@ GNSS 相关逻辑包括：
 - Mahalanobis/NIS gate：根据创新大小判断观测是否可信。
 - 运动一致性检查：比较 GNSS 与 odom 的短时运动趋势。
 - 健康评分与状态机：对弱观测增大协方差，对严重异常观测拒绝更新。
-- odom 丢失退化：可选使用 GNSS 位置和速度伪观测维持可用输出。
+- odom 丢失退化：使用 GNSS 位置观测维持可用输出，不再使用 GNSS 位置差分速度。
 
 ## odom 健康处理
 

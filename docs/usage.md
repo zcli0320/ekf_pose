@@ -118,7 +118,7 @@ rostopic echo -n 1 /ekf/gnss_path
 | `enable_gnss_motion_consistency` | `true` | 检查 GNSS 与 odom 运动一致性 |
 | `enable_gnss_health_score` | `true` | 启用 GNSS 健康评分 |
 | `enable_gnss_yaw_alignment` | `true` | 启用 GNSS 到 odom 的 yaw 对齐 |
-| `enable_gnss_velocity_when_odom_lost` | `false` | odom 丢失时启用 GNSS 速度伪观测 |
+| `enable_gnss_velocity_when_odom_lost` | `false` | 历史可选项；后续实验保持关闭，仅使用 GNSS 位置观测 |
 
 可视化参数：
 

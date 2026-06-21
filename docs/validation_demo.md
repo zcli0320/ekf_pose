@@ -273,7 +273,7 @@ rostopic hz /ekf/guided_vio_odom
 ```bash
 roslaunch ekf ekf_lidar.launch \
   start_rviz:=true \
-  enable_gnss_velocity_when_odom_lost:=true
+  enable_gnss_velocity_when_odom_lost:=false
 ```
 
 播放：
@@ -286,7 +286,7 @@ rosbag play --clock /home/zcl/datasets/KARI_drone_vertical_takeoff_and_landing_n
 
 - odom 正常阶段，EKF 主要跟随 odom 的短时稳定轨迹。
 - odom 丢失后，EKF 不应立即停止发布。
-- GNSS 位置和 GNSS 差分速度伪观测辅助维持退化定位。
+- GNSS 作为位置观测辅助维持退化定位；不使用 GNSS 位置差分速度伪观测。
 - 精度可能下降，但轨迹应保持可用和连续。
 
 ## 场景六：GNSS cold start
@@ -305,7 +305,7 @@ roslaunch ekf ekf_lidar.launch \
   odom_primary_topic:=/unused_odom_primary \
   odom_fallback_topic:=/unused_odom_fallback \
   enable_gnss_cold_start:=true \
-  enable_gnss_velocity_when_odom_lost:=true
+  enable_gnss_velocity_when_odom_lost:=false
 ```
 
 播放：

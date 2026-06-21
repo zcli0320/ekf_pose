@@ -65,7 +65,7 @@ GNSS 是否真正参与，需要同时看 `/ekf/gnss_path`、`gnss_yaw_alignment
 | IMU 输入 | 角速度、线加速度 | 高频预测 `X` 和 `P`，过程噪声为 `Qt` |
 | odom 观测 | 位置 + 姿态 | 主要短时位姿约束，残差为 `[dp,dtheta]`，观测噪声为 6x6 `Rt` |
 | GNSS 观测 | `NavSatFix -> ENU -> EKF/world frame` 后的位置 | 标准情况下只观测位置 `p`，观测矩阵为 `H=[I,0,0,0,0]`，噪声为 GNSS 独立 3x3 `R` |
-| GNSS 速度伪观测 | 连续 GNSS 位置差分 | 仅在 odom 丢失且启用相关选项时，用于辅助退化定位 |
+| GNSS 速度伪观测 | 连续 GNSS 位置差分 | 历史可选分支；后续 data/data2 消融实验关闭该项，仅使用 GNSS 位置观测 |
 
 ## 数据确认
 
@@ -390,4 +390,4 @@ benchmark 统一参数：
 1. 展示或基础验证优先使用 `gnss_balanced` 配置。
 2. 若要验证弱 GNSS 健康管理，基于 `/home/zcl/data.bag` 或 `/home/zcl/data2.bag` 派生弱 GNSS bag，建议按 `header.stamp` 构造 GNSS covariance 放大、GNSS 位置跳变或 GNSS 短时 dropout 窗口。
 3. 派生弱 GNSS bag 后，重复 `gnss_balanced`、`gnss_trusted`、`gnss_adaptive_nis_window` 对比，重点记录 `gnss_weak_count`、`gnss_reject_count`、`ekf_step_max` 和 `ekf_vs_odom_p95`。
-4. 如果需要验证 odom 退化下 GNSS 接管，应单独生成 odom dropout bag，并显式打开 `enable_gnss_velocity_when_odom_lost`。该实验不要与本轮健康 odom 验证混在一起。
+4. 如果需要验证 odom 退化下 GNSS 接管，应单独生成 odom dropout bag，并保持 `enable_gnss_velocity_when_odom_lost=false`，只评估 GNSS 位置观测对 EKF 的约束效果。该实验不要与本轮健康 odom 验证混在一起。

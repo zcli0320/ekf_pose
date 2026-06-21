@@ -1,0 +1,134 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 70
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 1840
+Preferences:
+  PromptSaveOnExit: false
+Toolbars:
+  toolButtonStyle: 2
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.25
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 80
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 0.85
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 80; 80
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.06
+      Name: Live Odom Red
+      Pose Style: None
+      Queue Size: 10
+      Topic: /ekf/input_path
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 70; 255; 120
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.06
+      Name: Live EKF Green
+      Pose Style: None
+      Queue Size: 10
+      Topic: /ekf/ekf_path
+      Unreliable: false
+      Value: true
+    - Alpha: 0.95
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 220; 40
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.06
+      Name: Live Aligned GNSS Yellow
+      Pose Style: None
+      Queue Size: 10
+      Topic: /ekf/gnss_path
+      Unreliable: false
+      Value: true
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        aligned_gnss_frame:
+          Value: true
+        ekf_base_link:
+          Value: true
+        odom:
+          Value: true
+        odom_input_frame:
+          Value: true
+      Marker Alpha: 1
+      Marker Scale: 3
+      Name: Live Frames
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Update Interval: 0
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /ekf/display_frame_axes
+      Name: Live Frame Axes
+      Queue Size: 10
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 65
+      Enable Stereo Rendering:
+        Value: false
+      Focal Point:
+        X: 20
+        Y: 25
+        Z: 0
+      Focal Shape Fixed Size: true
+      Invert Z Axis: false
+      Name: Current View
+      Pitch: 0.75
+      Target Frame: odom
+      Yaw: 2.58
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1400
+  Hide Left Dock: false
+  Width: 2200
+  X: 40
+  Y: 40
