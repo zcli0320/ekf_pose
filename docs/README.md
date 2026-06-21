@@ -7,6 +7,9 @@
 | [reproduction.md](reproduction.md) | 复现说明，按环境、topic、运行、检查和排错组织 |
 | [usage.md](usage.md) | 编译运行、topic、参数、bag 数据准备 |
 | [algorithm.md](algorithm.md) | EKF 状态量、输入观测、协方差、GNSS 健康管理、VO/VIO 引导 |
+| [odom_ablation_experiment_summary.md](odom_ablation_experiment_summary.md) | data/data2 odom 消融实验汇总、bag、统计脚本、误差和最终结论 |
+| [core_code_walkthrough.md](core_code_walkthrough.md) | 核心 C++ 代码注释解析，串联 IMU 预测、odom 回放更新和 GNSS 门控 |
+| [ekf_node_function_reference.md](ekf_node_function_reference.md) | `ekf_node_vio_timesync_with_acc_pub.cpp` 每个函数的详细解析和数学关系 |
 | [validation_demo.md](validation_demo.md) | 验证指标、RViz 展示流程、预期现象和讲解要点 |
 | [README.md](README.md) | 当前文档入口和仓库维护要点 |
 
@@ -14,8 +17,10 @@
 
 1. 首次复现项目：先看 [reproduction.md](reproduction.md)。
 2. 需要改 topic、参数或 bag：再看 [usage.md](usage.md)。
-3. 准备答辩或解释算法：看 [algorithm.md](algorithm.md) 和 [validation_demo.md](validation_demo.md)。
-4. 准备公开仓库或整理材料：看本文档的维护要点。
+3. 查看 odom 消融实验结论：看 [odom_ablation_experiment_summary.md](odom_ablation_experiment_summary.md)。
+4. 准备改核心 C++：先看 [algorithm.md](algorithm.md)，再看 [core_code_walkthrough.md](core_code_walkthrough.md) 和 [ekf_node_function_reference.md](ekf_node_function_reference.md)。
+5. 准备答辩或解释算法：看 [algorithm.md](algorithm.md) 和 [validation_demo.md](validation_demo.md)。
+6. 准备公开仓库或整理材料：看本文档的维护要点。
 
 ## 仓库结构
 
