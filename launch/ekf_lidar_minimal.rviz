@@ -1,6 +1,15 @@
 Panels:
   - Class: rviz/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 1840
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -10,20 +19,28 @@ Visualization Manager:
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 80
       Reference Frame: <Fixed Frame>
       Value: true
-    - Alpha: 0.8
+    - Alpha: 0.800000011920929
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 90; 90
       Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
       Line Style: Lines
-      Line Width: 0.035
+      Line Width: 0.03500000014901161
       Name: Input Odom Path
       Offset:
         X: 0
@@ -31,16 +48,23 @@ Visualization Manager:
         Z: 0
       Pose Color: 255; 90; 90
       Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic: /ekf/input_path
       Unreliable: false
       Value: true
-    - Alpha: 0.95
+    - Alpha: 0.949999988079071
       Buffer Length: 1
       Class: rviz/Path
       Color: 80; 255; 120
       Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
       Line Style: Lines
-      Line Width: 0.075
+      Line Width: 0.07500000298023224
       Name: EKF Fusion Path
       Offset:
         X: 0
@@ -48,16 +72,23 @@ Visualization Manager:
         Z: 0
       Pose Color: 80; 255; 120
       Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic: /ekf/ekf_path
       Unreliable: false
       Value: true
-    - Alpha: 0.9
+    - Alpha: 0.8999999761581421
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 220; 70
       Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
       Line Style: Lines
-      Line Width: 0.055
+      Line Width: 0.054999999701976776
       Name: GNSS Path
       Offset:
         X: 0
@@ -65,6 +96,10 @@ Visualization Manager:
         Z: 0
       Pose Color: 255; 220; 70
       Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic: /ekf/gnss_path
       Unreliable: false
       Value: true
@@ -73,9 +108,8 @@ Visualization Manager:
       Marker Topic: /ekf/ekf_segments
       Name: EKF Segments
       Namespaces:
-        ekf_segments: true
+        {}
       Queue Size: 100
-      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
@@ -95,8 +129,11 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 35
+      Distance: 63.2850456237793
       Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
@@ -104,19 +141,21 @@ Visualization Manager:
         Y: -4
         Z: -13
       Focal Shape Fixed Size: true
-      Focal Shape Size: 0.05
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.01
-      Pitch: 0.75
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.9747962355613708
       Target Frame: <Fixed Frame>
-      Yaw: 4.2
+      Yaw: 1.5349996089935303
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1100
+  Height: 2055
   Hide Left Dock: false
   Hide Right Dock: false
-  Width: 1760
-  X: 80
-  Y: 60
+  QMainWindow State: 000000ff00000000fd000000010000000000000156000007b1fc0200000001fb000000100044006900730070006c006100790073010000003b000007b1000000c700ffffff00000d98000007b100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 3828
+  X: -32
+  Y: -32

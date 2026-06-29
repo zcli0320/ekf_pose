@@ -1,0 +1,44 @@
+{
+  "alignment": "GNSS aligned into odom/world frame; odom positions rebased; hidden /ground_truth/odom copied from original odom before deletion",
+  "bag": "/home/zcl/catkin_ws/src/ekf/results/odom_ablation_40s/data_95_135s_rebased_odom_header_dropout_8_32.bag",
+  "dataset": "data",
+  "dropout_window_s": [
+    8.0,
+    32.0
+  ],
+  "ekf_vs_hidden_odom": {
+    "count": 3060,
+    "max_m": 0.5443397059247977,
+    "mean_m": 0.23562862752042593,
+    "mse_m2": 0.06656944933657417,
+    "p95_m": 0.43681348615746285,
+    "rmse_m": 0.2580105605136623
+  },
+  "filtering": "enable_output_motion_smoothing=true; second-order damped output smoother; natural_freq=3.0Hz; damping_ratio=1.0; max_accel=50.0; max_correction_speed=20.0",
+  "health_counts": {
+    "gnss_velocity_update_count": 11,
+    "odom_lost_count": 22,
+    "odom_weak_count": 1,
+    "reset_count": 0
+  },
+  "hidden_odom_reference_self_error": {
+    "mse_m2": 0.0,
+    "p95_m": 0.0
+  },
+  "odom_visible_during_dropout": {
+    "count": 0,
+    "mse_m2": null,
+    "note": "/mavros/odometry/out is intentionally removed from 8-32s; hidden odom is the reference, so no visible odom estimate exists in the dropout window.",
+    "p95_m": null
+  },
+  "smoothness": {
+    "jerk_max_mps3": 12329.885816723074,
+    "jerk_p95_mps3": 3595.549871880601,
+    "smoothness_count": 3059,
+    "step_max_m": 0.04868351270122626,
+    "step_mean_m": 0.014430354694625261,
+    "step_p95_m": 0.026365822024475752,
+    "velocity_delta_max_mps": 0.8000016212463374,
+    "velocity_delta_p95_mps": 0.3566669582357638
+  }
+}

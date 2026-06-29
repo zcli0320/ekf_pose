@@ -92,6 +92,8 @@ rostopic hz /ekf/ekf_odom
 - [复现说明](docs/reproduction.md)：从环境、topic、运行、检查到常见问题的完整复现路径
 - [使用说明](docs/usage.md)：编译、launch、topic、参数和 bag 数据准备
 - [算法说明](docs/algorithm.md)：EKF 状态量、观测量、协方差、GNSS 健康管理和 VO/VIO 引导
+- [核心代码注释解析](docs/core_code_walkthrough.md)：IMU 预测、odom 时间同步更新、GNSS 门控和 Jacobian 对应关系
+- [核心函数级解析](docs/ekf_node_function_reference.md)：`ekf_node_vio_timesync_with_acc_pub.cpp` 每个函数的作用、数学关系和维护风险
 - [验证与 RViz 展示](docs/validation_demo.md)：验证指标、RViz 展示流程、预期现象和讲解要点
 
 ## Repository Layout

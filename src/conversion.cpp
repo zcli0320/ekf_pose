@@ -5,9 +5,16 @@ using namespace std;
 using namespace Eigen;
 
 /**
-Euler angle defination: zyx
-Rotation matrix: C_body2ned
-**/
+ * Rotation conversion helpers used by the EKF node.
+ *
+ * Convention:
+ *   - Euler vector layout is [roll, pitch, yaw].
+ *   - Composition order is ZYX: R = Rz(yaw) * Ry(pitch) * Rx(roll).
+ *   - Quaternion storage follows Eigen's constructor order (w, x, y, z).
+ *
+ * Keep these helpers consistent with yaw_from_quaternion() in the EKF node.
+ * Mixing Euler conventions is a common source of sign and yaw-frame bugs.
+ **/
 /// @brief Convert ZYX roll-pitch-yaw Euler angles to a quaternion.
 Quaterniond euler2quaternion(Vector3d euler)
 {
@@ -29,6 +36,8 @@ Quaterniond euler2quaternion(Vector3d euler)
 /// @brief Convert a quaternion to a rotation matrix.
 Matrix3d quaternion2mat(Quaterniond q)
 {
+  // Closed-form rotation matrix for a unit quaternion. EKF callers normalize
+  // orientation before use so quaternion scale drift does not leak into R.
   Matrix3d m;
   double a = q.w(), b = q.x(), c = q.y(), d = q.z();
   m << a*a + b*b - c*c - d*d, 2*(b*c - a*d), 2*(b*d+a*c),
@@ -40,6 +49,9 @@ Matrix3d quaternion2mat(Quaterniond q)
 /// @brief Convert a rotation matrix to ZYX roll-pitch-yaw Euler angles.
 Vector3d mat2euler(Matrix3d m)
 { 
+  // ZYX inverse mapping. Pitch uses asin(-R20), so this utility inherits the
+  // usual Euler singularity near +/-90 deg pitch. The EKF state itself avoids
+  // that singularity by storing orientation as a quaternion.
   double r = atan2(m(2, 1), m(2, 2));
   double p = asin(-m(2, 0));
   double y = atan2(m(1, 0), m(0, 0));
@@ -65,6 +77,7 @@ Quaterniond mat2quaternion(Matrix3d m)
 /// @brief Convert ZYX roll-pitch-yaw Euler angles to a rotation matrix.
 Matrix3d euler2mat(Vector3d euler)
 {
+  // Rz(yaw) * Ry(pitch) * Rx(roll), matching euler2quaternion().
   double cr = cos(euler(0));
   double sr = sin(euler(0));
   double cp = cos(euler(1));
@@ -97,6 +110,8 @@ double quaternion2yaw(Quaterniond q)
 /// @brief Build the mapping from ZYX Euler-angle rates to body angular velocity.
 Matrix3d w_Euler2Body(Vector3d q)
 {
+    // q is [roll, pitch, yaw]. G maps Euler rates to body angular velocity:
+    //   omega_body = G(q) * [roll_dot, pitch_dot, yaw_dot].
     double cr = cos( q(0));
     double sr = sin( q(0));
     double cp = cos( q(1));
@@ -114,6 +129,9 @@ Matrix3d w_Euler2Body(Vector3d q)
 /// @brief Build the inverse mapping from body angular velocity to ZYX Euler-angle rates.
 Matrix3d w_Body2Euler(Vector3d q)
 {
+    // Inverse of w_Euler2Body(). cp is guarded by a small epsilon to avoid a
+    // hard division-by-zero at pitch = +/-90 deg. This does not remove the
+    // Euler singularity; it only prevents numeric explosion in utility usage.
     double cr = cos( q(0));
     double sr = sin( q(0));
     double cp = cos( q(1)) + 0.00000001;

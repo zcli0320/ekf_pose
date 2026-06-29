@@ -1,0 +1,38 @@
+{
+  "csv": "results/data2_odom_ablation_40s/window_stats_smoothing/data2_dropout_8_32_low_latency_balanced_ekf_vs_hidden_odom_window_errors.csv",
+  "figure": "results/data2_odom_ablation_40s/window_stats_smoothing/data2_dropout_8_32_low_latency_balanced_ekf_vs_hidden_odom_window_stats.png",
+  "label": "data2_dropout_8_32_low_latency_balanced",
+  "metadata": {
+    "bag": "/home/zcl/catkin_ws/src/ekf/results/data2_odom_ablation_40s/data2_40s_odom_header_dropout_8_32.bag",
+    "bag_start_s": 1781254165.299333,
+    "ekf_samples": 5093,
+    "ekf_topic": "/ekf/ekf_odom",
+    "gnss_velocity_update_count": 11,
+    "max_dt_s": 0.04,
+    "odom_lost_count": 22,
+    "odom_weak_count": 4,
+    "reference_samples": 1200,
+    "reference_topic": "/ground_truth/odom",
+    "reset_count": 0
+  },
+  "smoothness": {
+    "jerk_max_mps3": 335030.0804292548,
+    "jerk_p95_mps3": 5282.455902006769,
+    "smoothness_count": 3060,
+    "step_max_m": 0.10494172563521015,
+    "step_mean_m": 0.03264599959505601,
+    "step_p95_m": 0.05941705776336177,
+    "velocity_delta_max_mps": 5.487910882918488,
+    "velocity_delta_p95_mps": 0.45000314712422707
+  },
+  "stats": {
+    "count": 3061,
+    "max_m": 1.6434695948466538,
+    "mean_m": 0.5145237546326551,
+    "mse_m2": 0.38268200321814144,
+    "p95_m": 1.238513852170768,
+    "rmse_m": 0.6186129672243716
+  },
+  "window_end_s": 32.0,
+  "window_start_s": 8.0
+}

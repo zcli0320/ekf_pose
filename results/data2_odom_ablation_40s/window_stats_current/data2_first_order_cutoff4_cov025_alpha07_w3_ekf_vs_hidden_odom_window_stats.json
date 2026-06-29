@@ -1,0 +1,38 @@
+{
+  "csv": "results/data2_odom_ablation_40s/window_stats_current/data2_first_order_cutoff4_cov025_alpha07_w3_ekf_vs_hidden_odom_window_errors.csv",
+  "figure": "results/data2_odom_ablation_40s/window_stats_current/data2_first_order_cutoff4_cov025_alpha07_w3_ekf_vs_hidden_odom_window_stats.png",
+  "label": "data2_first_order_cutoff4_cov025_alpha07_w3",
+  "metadata": {
+    "bag": "results/data2_odom_ablation_40s/data2_40s_odom_header_dropout_8_32.bag",
+    "bag_start_s": 1781254165.299333,
+    "ekf_samples": 5081,
+    "ekf_topic": "/ekf/ekf_odom",
+    "gnss_velocity_update_count": 11,
+    "max_dt_s": 0.04,
+    "odom_lost_count": 22,
+    "odom_weak_count": 5,
+    "reference_samples": 1200,
+    "reference_topic": "/ground_truth/odom",
+    "reset_count": 0
+  },
+  "smoothness": {
+    "jerk_max_mps3": 1469134.6784272187,
+    "jerk_p95_mps3": 35626.81193899049,
+    "smoothness_count": 3060,
+    "step_max_m": 0.1092963460898127,
+    "step_mean_m": 0.0324243000070942,
+    "step_p95_m": 0.058011615157346534,
+    "velocity_delta_max_mps": 4.272398445920778,
+    "velocity_delta_p95_mps": 0.6108433684062264
+  },
+  "stats": {
+    "count": 3061,
+    "max_m": 1.617454307291964,
+    "mean_m": 0.535620180851025,
+    "mse_m2": 0.4057602363116119,
+    "p95_m": 1.2095143296391249,
+    "rmse_m": 0.6369931210865718
+  },
+  "window_end_s": 32.0,
+  "window_start_s": 8.0
+}

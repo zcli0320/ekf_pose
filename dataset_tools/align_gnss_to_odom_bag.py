@@ -101,6 +101,38 @@ def transform_position(position, yaw, translation):
     )
 
 
+def smooth_aligned_positions(aligned, odom_samples, max_step_correction=None,
+                             max_z_step_correction=None):
+    xy_enabled = max_step_correction is not None and max_step_correction > 0.0
+    z_enabled = max_z_step_correction is not None and max_z_step_correction > 0.0
+    if (not xy_enabled and not z_enabled) or len(aligned) < 2:
+        return [(stamp, position.copy()) for stamp, position in aligned]
+
+    smoothed = []
+    previous_position = None
+    previous_odom = None
+    max_step_correction = float(max_step_correction or 0.0)
+    max_z_step_correction = float(max_z_step_correction or 0.0)
+    for stamp, raw_position in aligned:
+        odom_position = interpolate_samples(odom_samples, stamp)
+        if previous_position is None:
+            position = raw_position.copy()
+        else:
+            predicted = previous_position + (odom_position - previous_odom)
+            correction = raw_position - predicted
+            correction_xy_norm = float(np.linalg.norm(correction[:2]))
+            if xy_enabled and correction_xy_norm > max_step_correction:
+                correction[:2] *= max_step_correction / correction_xy_norm
+            if z_enabled:
+                correction[2] = max(-max_z_step_correction,
+                                    min(max_z_step_correction, correction[2]))
+            position = predicted + correction
+        smoothed.append((stamp, position))
+        previous_position = position
+        previous_odom = odom_position
+    return smoothed
+
+
 def _nearest_sample_index(samples, stamp):
     times = [item[0] for item in samples]
     index = bisect_left(times, stamp)
@@ -151,7 +183,8 @@ def _candidate_window_indices(samples, stamp, window_s, min_pairs):
     return unique
 
 
-def align_positions_sliding(gnss_samples, odom_samples, window_s=30.0, min_pairs=20):
+def align_positions_sliding(gnss_samples, odom_samples, window_s=30.0, min_pairs=20,
+                            max_step_correction=None, max_z_step_correction=None):
     if len(gnss_samples) < min_pairs:
         raise ValueError("not enough GNSS samples for sliding alignment")
     if len(odom_samples) < 2:
@@ -187,13 +220,41 @@ def align_positions_sliding(gnss_samples, odom_samples, window_s=30.0, min_pairs
         residuals.append(score)
         yaws.append(yaw)
 
+    aligned = smooth_aligned_positions(
+        aligned,
+        odom_samples,
+        max_step_correction,
+        max_z_step_correction,
+    )
+
+    aligned_errors = []
+    step_errors = []
+    previous_aligned = None
+    previous_odom = None
+    for stamp, aligned_position in aligned:
+        odom_position = interpolate_samples(odom_samples, stamp)
+        aligned_errors.append(float(np.linalg.norm(aligned_position[:2] - odom_position[:2])))
+        if previous_aligned is not None:
+            aligned_step = aligned_position[:2] - previous_aligned[:2]
+            odom_step = odom_position[:2] - previous_odom[:2]
+            step_errors.append(float(np.linalg.norm(aligned_step - odom_step)))
+        previous_aligned = aligned_position
+        previous_odom = odom_position
+
     stats = {
         "mode": "sliding",
         "count": len(aligned),
         "window_s": float(window_s),
         "min_pairs": int(min_pairs),
+        "max_step_correction": float(max_step_correction or 0.0),
+        "max_z_step_correction": float(max_z_step_correction or 0.0),
         "residual_mean": float(np.mean(residuals)),
         "residual_p95": float(np.percentile(residuals, 95)),
+        "aligned_error_mean": float(np.mean(aligned_errors)),
+        "aligned_error_p95": float(np.percentile(aligned_errors, 95)),
+        "aligned_error_max": float(np.max(aligned_errors)),
+        "step_error_p95": float(np.percentile(step_errors, 95)) if step_errors else 0.0,
+        "step_error_max": float(np.max(step_errors)) if step_errors else 0.0,
         "yaw_min_deg": float(math.degrees(min(yaws))),
         "yaw_max_deg": float(math.degrees(max(yaws))),
     }
@@ -294,6 +355,20 @@ def main():
     parser.add_argument("--frame-id", default="odom")
     parser.add_argument("--window-s", type=float, default=30.0)
     parser.add_argument("--min-pairs", type=int, default=20)
+    parser.add_argument(
+        "--max-step-correction",
+        type=float,
+        default=0.10,
+        help="Maximum horizontal correction per GNSS sample after odom-guided continuity prediction. "
+             "Set <=0 to disable.",
+    )
+    parser.add_argument(
+        "--max-z-step-correction",
+        type=float,
+        default=0.08,
+        help="Maximum vertical correction per GNSS sample after odom-guided continuity prediction. "
+             "Set <=0 to disable.",
+    )
     parser.add_argument("--covariance-xy", type=float, default=4.0)
     parser.add_argument("--covariance-z", type=float, default=9.0)
     args = parser.parse_args()
@@ -302,7 +377,12 @@ def main():
         args.input_bag, args.gnss_topic, args.odom_topic
     )
     aligned, stats = align_positions_sliding(
-        gnss_samples, odom_samples, window_s=args.window_s, min_pairs=args.min_pairs
+        gnss_samples,
+        odom_samples,
+        window_s=args.window_s,
+        min_pairs=args.min_pairs,
+        max_step_correction=args.max_step_correction,
+        max_z_step_correction=args.max_z_step_correction,
     )
     aligned_by_stamp = {stamp: position for stamp, position in aligned}
     written = write_output_bag(

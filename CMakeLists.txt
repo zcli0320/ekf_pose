@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
     geometry_msgs
     sensor_msgs
     visualization_msgs
+    tf2_ros
     )
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -37,6 +38,8 @@ target_link_libraries(imu_add_noise_quat ${catkin_LIBRARIES} )
 
 catkin_install_python(PROGRAMS
     scripts/mun_frl_topic_bridge.py
+    scripts/persist_review_paths.py
+    scripts/publish_display_frames.py
     scripts/vo_gnss_imu_guidance.py
     scripts/vio_gnss_imu_guidance.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

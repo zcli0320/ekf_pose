@@ -15,6 +15,16 @@
     <arg name="q_rp_cov" default="10.0"/>
     <arg name="q_yaw_cov" default="0.05"/>
     <arg name="cutoff_freq" default="20.0"/>
+    <arg name="enable_output_motion_smoothing" default="true"/>
+    <arg name="output_smoothing_natural_freq" default="3.0"/>
+    <arg name="output_smoothing_damping_ratio" default="1.0"/>
+    <arg name="output_smoothing_max_accel" default="50.0"/>
+    <arg name="output_smoothing_max_correction_speed" default="20.0"/>
+    <arg name="output_smoothing_normal_natural_freq" default="3.5"/>
+    <arg name="output_smoothing_normal_max_accel" default="50.0"/>
+    <arg name="output_smoothing_normal_max_correction_speed" default="20.0"/>
+    <arg name="output_smoothing_release_error" default="0.005"/>
+    <arg name="output_smoothing_recovery_duration" default="0.8"/>
     <arg name="gnss_min_interval" default="0.5"/>
     <arg name="gnss_min_cov_xy" default="16.0"/>
     <arg name="gnss_min_cov_z" default="25.0"/>
@@ -55,21 +65,40 @@
     <arg name="enable_gnss_yaw_alignment" default="true"/>
     <arg name="gnss_require_yaw_alignment_before_update" default="true"/>
     <arg name="gnss_alignment_min_samples" default="5"/>
-    <arg name="gnss_alignment_max_samples" default="30"/>
-    <arg name="gnss_alignment_min_motion" default="1.0"/>
+    <arg name="gnss_alignment_max_samples" default="120"/>
+    <arg name="gnss_alignment_min_motion" default="20.0"/>
     <arg name="gnss_alignment_sample_interval" default="0.5"/>
     <arg name="gnss_odom_sync_max_dt" default="0.2"/>
-    <arg name="gnss_alignment_max_residual" default="1.0"/>
+    <arg name="gnss_alignment_max_residual" default="3.0"/>
+    <arg name="enable_gnss_alignment_refinement" default="true"/>
+    <arg name="gnss_alignment_refinement_min_samples" default="20"/>
+    <arg name="gnss_alignment_refinement_max_samples" default="60"/>
+    <arg name="gnss_alignment_refinement_min_motion" default="12.0"/>
+    <arg name="gnss_alignment_refinement_max_residual" default="2.0"/>
+    <arg name="gnss_alignment_refinement_gain" default="0.35"/>
+    <arg name="gnss_alignment_refinement_max_yaw_step" default="0.35"/>
+    <arg name="gnss_alignment_refinement_max_translation_step" default="5.0"/>
     <arg name="enable_odom_realign" default="true"/>
     <arg name="odom_use_msg_covariance" default="false"/>
     <arg name="odom_msg_min_position_cov" default="0.01"/>
     <arg name="odom_msg_min_orientation_cov" default="0.01"/>
     <arg name="enable_adaptive_observation_covariance" default="true"/>
     <arg name="odom_loss_timeout" default="1.0"/>
+    <arg name="enable_odom_recovery_guard" default="true"/>
+    <arg name="odom_recovery_frames" default="45"/>
+    <arg name="odom_recovery_scale" default="1000.0"/>
+    <arg name="odom_recovery_min_scale" default="1.0"/>
     <arg name="enable_gnss_velocity_when_odom_lost" default="false"/>
     <arg name="gnss_velocity_min_dt" default="0.05"/>
     <arg name="gnss_velocity_max_dt" default="1.5"/>
     <arg name="gnss_velocity_cov" default="1.0"/>
+    <arg name="gnss_velocity_window_size" default="2"/>
+    <arg name="gnss_velocity_smoothing_alpha" default="1.0"/>
+    <arg name="gyro_bias_rw_cov" default="0.0"/>
+    <arg name="acc_bias_rw_cov" default="0.0"/>
+    <arg name="path_publish_stride" default="1"/>
+    <arg name="start_display_frames" default="true"/>
+    <arg name="start_review_paths" default="true"/>
     <arg name="start_rviz" default="true"/>
     <arg name="rviz_config" default="$(find ekf)/launch/ekf_lidar_minimal.rviz"/>
     <arg name="use_sim_time" default="true"/>
@@ -115,6 +144,16 @@
         <param name="q_rp_cov" type="double" value="$(arg q_rp_cov)"/>
         <param name="q_yaw_cov" type="double" value="$(arg q_yaw_cov)"/>
         <param name="cutoff_freq" type="double" value="$(arg cutoff_freq)"/>
+        <param name="enable_output_motion_smoothing" type="bool" value="$(arg enable_output_motion_smoothing)"/>
+        <param name="output_smoothing_natural_freq" type="double" value="$(arg output_smoothing_natural_freq)"/>
+        <param name="output_smoothing_damping_ratio" type="double" value="$(arg output_smoothing_damping_ratio)"/>
+        <param name="output_smoothing_max_accel" type="double" value="$(arg output_smoothing_max_accel)"/>
+        <param name="output_smoothing_max_correction_speed" type="double" value="$(arg output_smoothing_max_correction_speed)"/>
+        <param name="output_smoothing_normal_natural_freq" type="double" value="$(arg output_smoothing_normal_natural_freq)"/>
+        <param name="output_smoothing_normal_max_accel" type="double" value="$(arg output_smoothing_normal_max_accel)"/>
+        <param name="output_smoothing_normal_max_correction_speed" type="double" value="$(arg output_smoothing_normal_max_correction_speed)"/>
+        <param name="output_smoothing_release_error" type="double" value="$(arg output_smoothing_release_error)"/>
+        <param name="output_smoothing_recovery_duration" type="double" value="$(arg output_smoothing_recovery_duration)"/>
         <param name="publish_warmup_frames" type="int" value="0"/>
         <param name="odom_jump_threshold" type="double" value="2.0"/>
         <param name="innovation_reject_threshold" type="double" value="1.5"/>
@@ -128,10 +167,18 @@
         <param name="odom_adaptive_reject_threshold" type="double" value="4.0"/>
         <param name="odom_adaptive_max_scale" type="double" value="100.0"/>
         <param name="odom_loss_timeout" type="double" value="$(arg odom_loss_timeout)"/>
+        <param name="enable_odom_recovery_guard" type="bool" value="$(arg enable_odom_recovery_guard)"/>
+        <param name="odom_recovery_frames" type="int" value="$(arg odom_recovery_frames)"/>
+        <param name="odom_recovery_scale" type="double" value="$(arg odom_recovery_scale)"/>
+        <param name="odom_recovery_min_scale" type="double" value="$(arg odom_recovery_min_scale)"/>
         <param name="enable_gnss_velocity_when_odom_lost" type="bool" value="$(arg enable_gnss_velocity_when_odom_lost)"/>
         <param name="gnss_velocity_min_dt" type="double" value="$(arg gnss_velocity_min_dt)"/>
         <param name="gnss_velocity_max_dt" type="double" value="$(arg gnss_velocity_max_dt)"/>
         <param name="gnss_velocity_cov" type="double" value="$(arg gnss_velocity_cov)"/>
+        <param name="gnss_velocity_window_size" type="int" value="$(arg gnss_velocity_window_size)"/>
+        <param name="gnss_velocity_smoothing_alpha" type="double" value="$(arg gnss_velocity_smoothing_alpha)"/>
+        <param name="gyro_bias_rw_cov" type="double" value="$(arg gyro_bias_rw_cov)"/>
+        <param name="acc_bias_rw_cov" type="double" value="$(arg acc_bias_rw_cov)"/>
         <param name="gnss_adaptive_threshold" type="double" value="3.0"/>
         <param name="gnss_adaptive_reject_threshold" type="double" value="5.0"/>
         <param name="gnss_adaptive_max_scale" type="double" value="25.0"/>
@@ -189,11 +236,47 @@
         <param name="gnss_alignment_sample_interval" type="double" value="$(arg gnss_alignment_sample_interval)"/>
         <param name="gnss_odom_sync_max_dt" type="double" value="$(arg gnss_odom_sync_max_dt)"/>
         <param name="gnss_alignment_max_residual" type="double" value="$(arg gnss_alignment_max_residual)"/>
+        <param name="enable_gnss_alignment_refinement" type="bool" value="$(arg enable_gnss_alignment_refinement)"/>
+        <param name="gnss_alignment_refinement_min_samples" type="int" value="$(arg gnss_alignment_refinement_min_samples)"/>
+        <param name="gnss_alignment_refinement_max_samples" type="int" value="$(arg gnss_alignment_refinement_max_samples)"/>
+        <param name="gnss_alignment_refinement_min_motion" type="double" value="$(arg gnss_alignment_refinement_min_motion)"/>
+        <param name="gnss_alignment_refinement_max_residual" type="double" value="$(arg gnss_alignment_refinement_max_residual)"/>
+        <param name="gnss_alignment_refinement_gain" type="double" value="$(arg gnss_alignment_refinement_gain)"/>
+        <param name="gnss_alignment_refinement_max_yaw_step" type="double" value="$(arg gnss_alignment_refinement_max_yaw_step)"/>
+        <param name="gnss_alignment_refinement_max_translation_step" type="double" value="$(arg gnss_alignment_refinement_max_translation_step)"/>
         <param name="gnss_min_status" type="int" value="0"/>
-        <param name="path_publish_stride" type="int" value="3"/>
+        <param name="path_publish_stride" type="int" value="$(arg path_publish_stride)"/>
         <param name="path_max_points" type="int" value="50000"/>
         <param name="arrow_publish_stride" type="int" value="30"/>
         <param name="arrow_max_markers" type="int" value="1000"/>
+    </node>
+
+    <node if="$(arg start_display_frames)" pkg="ekf" type="publish_display_frames.py" name="ekf_display_frames" output="screen">
+        <param name="world_frame" type="str" value="odom"/>
+        <param name="odom_frame" type="str" value="odom_input_frame"/>
+        <param name="ekf_frame" type="str" value="ekf_base_link"/>
+        <param name="gnss_frame" type="str" value="aligned_gnss_frame"/>
+        <param name="odom_topic" type="str" value="$(arg odom_primary_topic)"/>
+        <param name="ekf_topic" type="str" value="/ekf/ekf_odom"/>
+        <param name="gnss_path_topic" type="str" value="/ekf/gnss_path"/>
+        <param name="axis_marker_topic" type="str" value="/ekf/display_frame_axes"/>
+        <param name="odom_axis_length" type="double" value="3.0"/>
+        <param name="ekf_axis_length" type="double" value="4.5"/>
+        <param name="gnss_axis_length" type="double" value="2.0"/>
+        <param name="axis_shaft_diameter" type="double" value="0.08"/>
+        <param name="axis_head_diameter" type="double" value="0.24"/>
+        <param name="axis_head_length" type="double" value="0.36"/>
+    </node>
+
+    <node if="$(arg start_review_paths)" pkg="ekf" type="persist_review_paths.py" name="ekf_review_paths" output="screen">
+        <param name="input_path_topic" type="str" value="/ekf/input_path"/>
+        <param name="ekf_path_topic" type="str" value="/ekf/ekf_path"/>
+        <param name="gnss_path_topic" type="str" value="/ekf/gnss_path"/>
+        <param name="review_input_path_topic" type="str" value="/ekf/review/input_path"/>
+        <param name="review_ekf_path_topic" type="str" value="/ekf/review/ekf_path"/>
+        <param name="review_gnss_path_topic" type="str" value="/ekf/review/gnss_path"/>
+        <param name="publish_hz" type="double" value="2.0"/>
+        <param name="restamp_to_now" type="bool" value="true"/>
     </node>
 
     <node if="$(arg start_rviz)" pkg="rviz" type="rviz" name="ekf_rviz" args="-d $(arg rviz_config)" output="screen"/>

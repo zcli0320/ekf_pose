@@ -1,0 +1,4 @@
+series,count,p95_m,mse_m2,rmse_m,max_m,note
+EKF vs hidden odom,3060,0.454166455575833,0.0678948671540229,0.26056643520227796,0.5590505056941141,"clean rerun, dropout window 8-32s"
+Visible odom input,0,N/A,N/A,N/A,N/A,intentionally disconnected in dropout window
+Hidden odom reference self-error,1199,0.0,0.0,0.0,0.0,reference baseline only

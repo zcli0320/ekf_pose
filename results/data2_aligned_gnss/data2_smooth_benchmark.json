@@ -1,0 +1,65 @@
+{
+  "bag": "/home/zcl/catkin_ws/src/ekf/results/data2_aligned_gnss/data2_with_aligned_gnss.bag",
+  "metrics": {
+    "ekf_count": 21763,
+    "ekf_step_max": 0.19471644781769928,
+    "ekf_step_p95": 0.05866452156571426,
+    "ekf_vs_aligned_gnss": {
+      "count": 21763,
+      "max": 3.3084706220754447,
+      "mean": 0.4678681105784248,
+      "p95": 1.4589823186767847
+    },
+    "ekf_vs_ground_truth": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "p95": null
+    },
+    "ekf_vs_node_gnss_path": {
+      "count": 8742,
+      "max": 3.3508758035353448,
+      "mean": 0.5011322334661368,
+      "p95": 1.4322950324019788
+    },
+    "ekf_vs_odom": {
+      "count": 21761,
+      "max": 0.3422447340373378,
+      "mean": 0.052909811268330935,
+      "p95": 0.1328723162583707
+    },
+    "ekf_vs_rigid_gnss": {
+      "count": 21763,
+      "max": 3.133622975590524,
+      "mean": 0.43833155596608764,
+      "p95": 1.388391373888009
+    },
+    "gnss_count": 1711,
+    "gnss_ground_truth_yaw_rad": null,
+    "gnss_reject_count": 0,
+    "gnss_rigid_yaw_rad": -0.0003658759573576537,
+    "gnss_weak_count": 17,
+    "gnss_yaw_alignment_count": 0,
+    "gps_vs_ground_truth": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "p95": null
+    },
+    "ground_truth_count": 0,
+    "node_gnss_path_count": 344,
+    "odom_count": 5133,
+    "odom_lost_count": 0,
+    "odom_realign_count": 0,
+    "odom_vs_ground_truth": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "p95": null
+    },
+    "odom_weak_count": 54,
+    "recovery_time_s": null,
+    "reset_count": 0,
+    "score": 0.6635078383819204
+  }
+}

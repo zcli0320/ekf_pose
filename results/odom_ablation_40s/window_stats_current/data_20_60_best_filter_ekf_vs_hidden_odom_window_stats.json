@@ -1,0 +1,38 @@
+{
+  "csv": "results/odom_ablation_40s/window_stats_current/data_20_60_best_filter_ekf_vs_hidden_odom_window_errors.csv",
+  "figure": "results/odom_ablation_40s/window_stats_current/data_20_60_best_filter_ekf_vs_hidden_odom_window_stats.png",
+  "label": "data_20_60_best_filter",
+  "metadata": {
+    "bag": "results/odom_ablation_40s/candidates/data_20_60s_odom_header_dropout_8_32.bag",
+    "bag_start_s": 1781253900.568866,
+    "ekf_samples": 5000,
+    "ekf_topic": "/ekf/ekf_odom",
+    "gnss_velocity_update_count": 11,
+    "max_dt_s": 0.04,
+    "odom_lost_count": 21,
+    "odom_weak_count": 1,
+    "reference_samples": 1200,
+    "reference_topic": "/ground_truth/odom",
+    "reset_count": 0
+  },
+  "smoothness": {
+    "jerk_max_mps3": 407380.0275607601,
+    "jerk_p95_mps3": 2598.1181730414078,
+    "smoothness_count": 3041,
+    "step_max_m": 0.033731425210743314,
+    "step_mean_m": 0.011676194113418928,
+    "step_p95_m": 0.02032681609182849,
+    "velocity_delta_max_mps": 1.7886952579126785,
+    "velocity_delta_p95_mps": 0.15958347988705499
+  },
+  "stats": {
+    "count": 3042,
+    "max_m": 0.3709367567293669,
+    "mean_m": 0.13051988606183082,
+    "mse_m2": 0.020817483525034434,
+    "p95_m": 0.2422441901476359,
+    "rmse_m": 0.1442826515040337
+  },
+  "window_end_s": 32.0,
+  "window_start_s": 8.0
+}

@@ -255,10 +255,20 @@ class FusionEvaluator:
     @staticmethod
     def summarize(values):
         if not values:
-            return {"count": 0, "mean": float("nan"), "p95": float("nan"), "max": float("nan")}
+            return {
+                "count": 0,
+                "mean": float("nan"),
+                "mse": float("nan"),
+                "rmse": float("nan"),
+                "p95": float("nan"),
+                "max": float("nan"),
+            }
+        mse = sum(value * value for value in values) / len(values)
         return {
             "count": len(values),
             "mean": sum(values) / len(values),
+            "mse": mse,
+            "rmse": math.sqrt(mse),
             "p95": FusionEvaluator.percentile(values, 0.95),
             "max": max(values),
         }
@@ -267,10 +277,12 @@ class FusionEvaluator:
     def format_line(name, stats):
         if stats["count"] == 0:
             return "{}: count=0".format(name)
-        return "{}: count={} mean={:.4f}m p95={:.4f}m max={:.4f}m".format(
+        return "{}: count={} mean={:.4f}m mse={:.6f}m^2 rmse={:.4f}m p95={:.4f}m max={:.4f}m".format(
             name,
             stats["count"],
             stats["mean"],
+            stats["mse"],
+            stats["rmse"],
             stats["p95"],
             stats["max"],
         )

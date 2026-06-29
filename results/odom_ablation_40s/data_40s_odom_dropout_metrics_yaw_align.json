@@ -1,0 +1,123 @@
+{
+  "bag": "results/odom_ablation_40s/data_40s_odom_header_dropout_8_32.bag",
+  "best": "odom_dropout_gnss_yaw_align",
+  "evaluator_topics": {
+    "aligned_gnss_path": "/ekf/gnss_path",
+    "ekf": "/ekf/ekf_odom",
+    "gnss": "/ekf/aligned_gnss/fix",
+    "ground_truth": "/ground_truth/odom",
+    "odom": "/mavros/odometry/out"
+  },
+  "extra_launch_args": [
+    "odom_primary_topic:=/mavros/odometry/out",
+    "gnss_topic:=/ekf/aligned_gnss/fix",
+    "use_gnss:=true",
+    "enable_gnss_yaw_alignment:=true",
+    "gnss_require_yaw_alignment_before_update:=true",
+    "gnss_alignment_min_samples:=5",
+    "gnss_alignment_max_samples:=80",
+    "gnss_alignment_min_motion:=1.0",
+    "gnss_alignment_max_residual:=3.0",
+    "enable_gnss_velocity_when_odom_lost:=true",
+    "odom_loss_timeout:=1.0",
+    "gnss_min_interval:=0.1",
+    "gnss_min_cov_xy:=0.25",
+    "gnss_min_cov_z:=1.0",
+    "gnss_cov_scale:=0.10",
+    "position_cov:=0.05"
+  ],
+  "extra_play_args": [],
+  "launch_file": "ekf_lidar.launch",
+  "results": [
+    {
+      "metrics": {
+        "ekf_count": 5087,
+        "ekf_step_max": 6.938160985960562,
+        "ekf_step_p95": 0.016715348982632265,
+        "ekf_vs_aligned_gnss": {
+          "count": 5087,
+          "max": 26.69593021731335,
+          "mean": 5.803483476361896,
+          "mse": 100.88074275654888,
+          "p95": 24.102394358136817,
+          "rmse": 10.043940599015352
+        },
+        "ekf_vs_ground_truth": {
+          "count": 5087,
+          "max": 26.877581212635214,
+          "mean": 5.777066826434214,
+          "mse": 101.16214241613042,
+          "p95": 24.053176172588746,
+          "rmse": 10.057939272839661
+        },
+        "ekf_vs_node_gnss_path": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "mse": null,
+          "p95": null,
+          "rmse": null
+        },
+        "ekf_vs_odom": {
+          "count": 2043,
+          "max": 26.877581212635214,
+          "mean": 10.629219339462981,
+          "mse": 231.4306854308476,
+          "p95": 25.69253206635731,
+          "rmse": 15.212846066099782
+        },
+        "ekf_vs_rigid_gnss": {
+          "count": 5087,
+          "max": 15.869699855863965,
+          "mean": 7.508475412523596,
+          "mse": 67.19059717319577,
+          "p95": 12.989762127128632,
+          "rmse": 8.196987078994072
+        },
+        "gnss_cold_start_count": 0,
+        "gnss_count": 400,
+        "gnss_ground_truth_yaw_rad": -8.259716599494795e-05,
+        "gnss_motion_inconsistent_count": 0,
+        "gnss_nis_isolated_count": 0,
+        "gnss_nis_monitor_count": 0,
+        "gnss_reject_count": 0,
+        "gnss_rigid_yaw_rad": -0.8968556682874762,
+        "gnss_velocity_update_count": 0,
+        "gnss_weak_count": 0,
+        "gnss_yaw_alignment_count": 0,
+        "gps_vs_ground_truth": {
+          "count": 1200,
+          "max": 0.25261662269442237,
+          "mean": 0.08826670397375969,
+          "mse": 0.010721496988198876,
+          "p95": 0.18431077414426866,
+          "rmse": 0.10354466180445458
+        },
+        "ground_truth_count": 1200,
+        "node_gnss_path_count": 0,
+        "odom_count": 480,
+        "odom_lost_count": 22,
+        "odom_realign_count": 1,
+        "odom_vs_ground_truth": {
+          "count": 480,
+          "max": 0.0,
+          "mean": 0.0,
+          "mse": 0.0,
+          "p95": 0.0,
+          "rmse": 0.0
+        },
+        "odom_weak_count": 1,
+        "recovery_time_s": null,
+        "reset_count": 0,
+        "score": 30.074827890227247,
+        "vio_lost_count": 0,
+        "vio_ready_count": 0,
+        "vio_reset_detected_count": 0,
+        "vio_waiting_count": 0
+      },
+      "trial": {
+        "name": "odom_dropout_gnss_yaw_align"
+      }
+    }
+  ]
+}

@@ -1,6 +1,15 @@
 Panels:
   - Class: rviz/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 1840
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -10,24 +19,40 @@ Visualization Manager:
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 80
       Reference Frame: <Fixed Frame>
       Value: true
-    - Alpha: 0.85
+    - Alpha: 0.8500000238418579
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 80; 80
       Enabled: true
-      Line Style: Lines
-      Line Width: 0.045
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.05999999865889549
       Name: Odom Red
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Pose Color: 255; 80; 80
       Pose Style: None
-      Topic: /ekf/input_path
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /ekf/review/input_path
       Unreliable: false
       Value: true
     - Alpha: 1
@@ -35,26 +60,95 @@ Visualization Manager:
       Class: rviz/Path
       Color: 70; 255; 120
       Enabled: true
-      Line Style: Lines
-      Line Width: 0.08
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.05999999865889549
       Name: EKF Green
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Pose Color: 70; 255; 120
       Pose Style: None
-      Topic: /ekf/ekf_path
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /ekf/review/ekf_path
       Unreliable: false
       Value: true
-    - Alpha: 0.95
+    - Alpha: 0.949999988079071
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 220; 40
       Enabled: true
-      Line Style: Lines
-      Line Width: 0.06
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.05999999865889549
       Name: Aligned GNSS Yellow
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Pose Color: 255; 220; 40
       Pose Style: None
-      Topic: /ekf/gnss_path
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /ekf/review/gnss_path
       Unreliable: false
+      Value: true
+    - Class: rviz/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        aligned_gnss_frame:
+          Value: true
+        ekf_base_link:
+          Value: true
+        odom:
+          Value: true
+        odom_input_frame:
+          Value: true
+      Marker Alpha: 1
+      Marker Scale: 3
+      Name: Display Frames
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        odom:
+          aligned_gnss_frame:
+            {}
+          ekf_base_link:
+            {}
+          odom_input_frame:
+            {}
+      Update Interval: 0
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /ekf/display_frame_axes
+      Name: Display Frame Axes
+      Namespaces:
+        aligned_gnss_frame_x: true
+        aligned_gnss_frame_y: true
+        aligned_gnss_frame_z: true
+        ekf_base_link_x: true
+        ekf_base_link_y: true
+        ekf_base_link_z: true
+        odom_input_frame_x: true
+        odom_input_frame_y: true
+        odom_input_frame_z: true
+      Queue Size: 10
       Value: true
   Enabled: true
   Global Options:
@@ -74,8 +168,11 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 80
+      Distance: 64.088134765625
       Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
@@ -83,19 +180,21 @@ Visualization Manager:
         Y: 0
         Z: 0
       Focal Shape Fixed Size: true
-      Focal Shape Size: 0.05
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.01
-      Pitch: 0.85
-      Target Frame: <Fixed Frame>
-      Yaw: 4.2
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.7097964882850647
+      Target Frame: ekf_base_link
+      Yaw: 2.5818190574645996
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1000
+  Height: 2055
   Hide Left Dock: false
   Hide Right Dock: false
-  Width: 1600
-  X: 120
-  Y: 80
+  QMainWindow State: 000000ff00000000fd000000010000000000000156000007b1fc0200000001fb000000100044006900730070006c006100790073010000003b000007b1000000c700ffffff00000d98000007b100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 3828
+  X: -32
+  Y: -32

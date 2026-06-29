@@ -3,6 +3,12 @@
 using namespace std;
 using namespace Eigen;
 
+// Rotation conversion convention shared by the EKF node:
+//   Euler vector = [roll, pitch, yaw]
+//   Rotation order = ZYX = Rz(yaw) * Ry(pitch) * Rx(roll)
+//   Quaternion scalar order in APIs = (w, x, y, z)
+// These utilities are for conversion and diagnostics; the EKF state keeps
+// orientation as a quaternion and applies corrections through SO(3) increments.
 /// @brief Convert ZYX roll-pitch-yaw Euler angles to a quaternion.
 Quaterniond euler2quaternion(Vector3d euler);
 /// @brief Convert a quaternion to a rotation matrix.
