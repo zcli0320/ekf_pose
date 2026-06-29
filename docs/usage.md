@@ -267,6 +267,31 @@ mkdir -p results/vio_guidance_demo
 curl -L -o results/vio_guidance_demo/vio_guidance_new_data_seg3_synth_gnss.bag https://github.com/zcli0320/ekf_pose/releases/download/data-v0.1.0/vio_guidance_new_data_seg3_synth_gnss.bag
 ```
 
+## 已推送的 data/data2 odom 消融实验
+
+当前仓库 `main` 分支已包含本轮 `data` 和 `data2` 的 odom 断联消融实验资产。后续维护以 `main` 为主，历史实验分支仅作追溯，不再单独维护。
+
+原始 bag：
+
+- `results/source_bags/data.bag`
+- `results/source_bags/data2.bag`
+- 说明：`results/source_bags/README.md`
+
+aligned GNSS 派生 bag、脚本说明和验证结果：
+
+- `results/data_aligned_gnss/`
+- `results/data2_aligned_gnss/`
+- 生成脚本：`dataset_tools/align_gnss_to_odom_bag.py`
+
+odom dropout 消融 bag、MSE/RMSE/P95 统计和图：
+
+- `results/odom_ablation_40s/`
+- `results/data2_odom_ablation_40s/`
+- 统计脚本：`scripts/evaluate_odom_dropout_window.py`
+- 汇总文档：`docs/odom_ablation_experiment_summary.md`
+
+核心结论是：最终展示和统计采用 IMU 预测 + odom 正常阶段约束 + odom 断联阶段 GNSS 3D 位置观测；`enable_gnss_velocity_when_odom_lost=false`，不再使用 GNSS 位置差分速度伪观测。注意这些 MSE 指标是 `/ekf/ekf_odom` 相对隐藏原始 odom `/ground_truth/odom` 的窗口误差，不是独立绝对真值误差。
+
 `dataset_tools/` 中包含公开数据集转换和异常注入工具，例如：
 
 - `kari_bag_to_project_bag.py`
@@ -298,4 +323,4 @@ rostopic hz /ekf/ekf_odom
 rostopic echo -n 1 /ekf/ekf_odom
 ```
 
-大型 bag 不建议提交到源码仓库。公开数据时应说明 topic 列表、来源、校验信息和再发布许可。
+后续新增大型 bag 前应先确认是否需要直接进入 `main`，并同步维护对应 README、topic 列表、来源、校验信息和再发布许可说明。
